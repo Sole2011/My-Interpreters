@@ -31,10 +31,27 @@
         <input name="q" type="search" autocomplete="off">
       </label>
       <label class="field">Language
-        <select name="language"><option value="">Any language</option></select>
+        <select name="language">
+          <option value="">Any language</option>
+          <option value="ASL">ASL</option>
+          <option value="Spanish">Spanish</option>
+        </select>
       </label>
       <label class="field">Specialty
-        <select name="specialty"><option value="">Any specialty</option></select>
+        <select name="specialty">
+          <option value="">Any specialty</option>
+          <option value="conference">Conference</option>
+          <option value="legal">Legal</option>
+          <option value="medical">Medical</option>
+        </select>
+      </label>
+      <label class="field">Certification
+        <select name="certification">
+          <option value="">Any certification</option>
+          <option value="CCHI">CCHI</option>
+          <option value="NBCMI">NBCMI</option>
+          <option value="Court certified">Court certified</option>
+        </select>
       </label>
       <label class="field">Service mode
         <select name="mode">
@@ -46,7 +63,7 @@
       <label class="field">Maximum hourly rate in dollars
         <input name="maxRate" type="number" min="0" inputmode="decimal">
       </label>
-      <label class="check"><input type="checkbox" name="verified"> Verified only</label>
+      <label class="check"><input type="checkbox" name="verified"> Verified interpreter only</label>
       <label class="check"><input type="checkbox" name="available"> Available now</label>
     </form>
     <p id="count" role="status" aria-live="polite" aria-atomic="true"></p>

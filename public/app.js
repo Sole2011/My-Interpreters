@@ -72,13 +72,17 @@ async function loadInterpreters() {
 }
 
 function fillFacets() {
-  const langs = [...new Set(all.flatMap(i => i.interpreter_languages.map(l => l.language)))].sort();
-  const specs = [...new Set(all.flatMap(i => i.specialties || []))].sort();
-  for (const [name, vals] of [["language", langs], ["specialty", specs]]) {
+  const langs = [...new Set(["ASL", "Spanish", ...all.flatMap(i => i.interpreter_languages.map(l => l.language))])].sort();
+  const specs = [...new Set(["conference", "legal", "medical", ...all.flatMap(i => i.specialties || []).map(s => s.toLowerCase())])].sort();
+  const certs = [...new Set(["CCHI", "NBCMI", "Court certified", ...all.flatMap(i => (i.certifications || []).map(c => c.name)).filter(Boolean)])].sort();
+  for (const [name, vals] of [["language", langs], ["specialty", specs], ["certification", certs]]) {
     const sel = document.querySelector(`[name=${name}]`);
     const cur = sel.value;
     sel.length = 1;
-    vals.forEach(v => sel.add(new Option(v, v)));
+    vals.forEach(v => {
+      const label = name === "specialty" ? v.charAt(0).toUpperCase() + v.slice(1) : v;
+      sel.add(new Option(label, v));
+    });
     sel.value = cur;
   }
 }
@@ -91,6 +95,7 @@ function filtered() {
       (!q || (i.display_name || "").toLowerCase().includes(q) || `${i.city} ${i.state}`.toLowerCase().includes(q)) &&
       (!f.language || i.interpreter_languages.some(l => l.language === f.language)) &&
       (!f.specialty || (i.specialties || []).includes(f.specialty)) &&
+      (!f.certification || (i.certifications || []).some(c => c.name === f.certification)) &&
       (!f.mode || (f.mode === "remote" ? i.remote : i.in_person)) &&
       (!f.maxRate || Number(i.hourly_rate) <= +f.maxRate) &&
       (!f.verified || i.verified) &&
@@ -149,9 +154,9 @@ function showSignup(note) {
     $("#orgf").hidden = isInt;
     form.org_name.required = !isInt;
     $("#extra").innerHTML = isInt
-      ? `<label>Languages (comma separated) <input name="languages" required></label>
-         <label>Specialties (comma separated) <input name="specialties" placeholder="medical, legal"></label>
-         <label>Certifications (comma separated) <input name="certs"></label>
+      ? `<label>Languages (comma separated) <input name="languages" placeholder="ASL, Spanish" required></label>
+        <label>Specialties (comma separated) <input name="specialties" placeholder="medical, legal, conference"></label>
+        <label>Certifications (comma separated) <input name="certs" placeholder="CCHI, NBCMI, Court certified"></label>
          <label>City <input name="city" required></label>
          <label>State <input name="state"></label>
          <label>Phone (shown only to organizations that unlock you) <input name="phone"></label>
