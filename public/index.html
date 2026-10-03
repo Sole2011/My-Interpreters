@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interpreter Directory</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Interpreter Directory</h1>
+  <nav>
+    <a href="#search">Find interpreters</a>
+    <a href="#pricing">Pricing</a>
+    <span id="auth"></span>
+  </nav>
+</header>
+
+<main>
+  <section id="search">
+    <h2>Find an interpreter</h2>
+    <form id="filters">
+      <input name="q" placeholder="Name or city">
+      <select name="language"><option value="">Any language</option></select>
+      <select name="specialty"><option value="">Any specialty</option></select>
+      <select name="mode">
+        <option value="">Remote or in-person</option>
+        <option value="remote">Remote</option>
+        <option value="in-person">In-person</option>
+      </select>
+      <input name="maxRate" type="number" min="0" placeholder="Max $/hr">
+      <label><input type="checkbox" name="verified"> Verified only</label>
+      <label><input type="checkbox" name="available"> Available now</label>
+    </form>
+    <p id="count"></p>
+    <div id="results"></div>
+  </section>
+
+  <section id="pricing">
+    <h2>Pricing</h2>
+    <div class="tiers">
+      <div class="card"><h3>Organizations: Free</h3>
+        <p>Search and see name, languages, city, rate. Contact details hidden.</p><p><b>$0</b></p></div>
+      <div class="card"><h3>Organizations: Pro</h3>
+        <p>10 unlocked contacts / month.</p><p><b>$49/mo</b> or $490/yr (2 months free)</p></div>
+      <div class="card"><h3>Organizations: Unlimited</h3>
+        <p>For hospital systems and agencies.</p><p><b>Custom quote</b></p></div>
+      <div class="card"><h3>Interpreters: Free</h3>
+        <p>Listed in search, ranked lower. Keep 100% of your pay.</p><p><b>$0</b></p></div>
+      <div class="card"><h3>Interpreters: Featured</h3>
+        <p>Top placement (5 slots per language) plus view and unlock stats.</p><p><b>$19/mo</b></p></div>
+      <div class="card"><h3>Verification</h3>
+        <p>Badge after certification check (CCHI, NBCMI, court).</p><p><b>$29 one-time</b></p></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="dlg"></dialog>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
