@@ -6,6 +6,30 @@ const split = s => (s || "").split(",").map(x => x.trim()).filter(Boolean);
 const attempt = async fn => { try { return await fn(); } catch (e) { alert(e.message || "Something went wrong"); } };
 const check = ({ data, error }) => { if (error) throw error; return data; };
 
+function initAccessibility() {
+  let preferences = {};
+  try { preferences = JSON.parse(localStorage.getItem("displayPreferences") || "{}"); } catch {}
+  const sizes = ["normal", "large", "larger"];
+  let sizeIndex = Math.max(0, sizes.indexOf(preferences.textSize));
+  let highContrast = preferences.highContrast === true;
+  const smaller = $("#text-smaller");
+  const larger = $("#text-larger");
+  const contrast = $("#contrast-toggle");
+  const apply = () => {
+    document.documentElement.dataset.textSize = sizes[sizeIndex];
+    document.body.classList.toggle("high-contrast", highContrast);
+    smaller.disabled = sizeIndex === 0;
+    larger.disabled = sizeIndex === sizes.length - 1;
+    contrast.setAttribute("aria-pressed", String(highContrast));
+    try { localStorage.setItem("displayPreferences", JSON.stringify({ textSize: sizes[sizeIndex], highContrast })); } catch {}
+  };
+  smaller.addEventListener("click", () => { sizeIndex = Math.max(0, sizeIndex - 1); apply(); });
+  larger.addEventListener("click", () => { sizeIndex = Math.min(sizes.length - 1, sizeIndex + 1); apply(); });
+  $("#text-reset").addEventListener("click", () => { sizeIndex = 0; apply(); });
+  contrast.addEventListener("click", () => { highContrast = !highContrast; apply(); });
+  apply();
+}
+
 let me = null; // { user, profile, interpreter?, usage? }
 let all = [];
 let contacts = new Map(); // interpreter id -> { email, phone }
@@ -24,8 +48,8 @@ async function loadMe() {
 function renderAuth() {
   const p = me?.profile;
   $("#auth").innerHTML = me
-    ? `${esc(p?.full_name || me.user.email)} (${p?.role === "organization" ? "org: " + esc(p.plan) : "interpreter"}) <button class="secondary" id="me">Account</button> <button class="secondary" id="out">Log out</button>`
-    : `<button class="secondary" id="in">Log in</button> <button id="up">Sign up</button>`;
+    ? `${esc(p?.full_name || me.user.email)} (${p?.role === "organization" ? "org: " + esc(p.plan) : "interpreter"}) <button type="button" class="secondary" id="me">Account</button> <button type="button" class="secondary" id="out">Log out</button>`
+    : `<button type="button" class="secondary" id="in">Log in</button> <button type="button" id="up">Sign up</button>`;
   $("#in")?.addEventListener("click", showLogin);
   $("#up")?.addEventListener("click", () => showSignup());
   $("#out")?.addEventListener("click", async () => { await sb.auth.signOut(); await refresh(); });
@@ -81,8 +105,8 @@ function render() {
     const c = contacts.get(i.id);
     const modes = [i.remote && "remote", i.in_person && "in-person"].filter(Boolean).join(" / ");
     return `
-    <div class="card ${i.featured ? "featured" : ""}">
-      <h3>${esc(i.display_name)}
+    <article class="card ${i.featured ? "featured" : ""}" aria-labelledby="interpreter-${esc(i.id)}-name">
+      <h3 id="interpreter-${esc(i.id)}-name">${esc(i.display_name)}
         ${i.verified ? '<span class="badge ok">Verified</span>' : ""}
         ${i.featured ? '<span class="badge feat">Featured</span>' : ""}</h3>
       <div>${i.interpreter_languages.map(l => `<span class="tag">${esc(l.language)}</span>`).join("")}</div>
@@ -91,21 +115,27 @@ function render() {
       ${i.certifications.length ? `<p class="muted">Certifications: ${i.certifications.map(x => esc(x.name)).join(", ")}</p>` : ""}
       ${c
         ? `<div class="locked">Email: ${esc(c.email)}<br>Phone: ${esc(c.phone || "not provided")}</div>`
-        : `<div class="locked">Email and phone hidden</div><div class="row"><button data-unlock="${esc(i.id)}">Unlock contact</button></div>`}
-    </div>`;
+        : `<div class="locked">Email and phone hidden</div><div class="row"><button type="button" data-unlock="${esc(i.id)}" aria-label="Unlock contact for ${esc(i.display_name)}">Unlock contact</button></div>`}
+      </article>`;
   }).join("");
 }
 
 async function refresh() {
-  await loadMe();
-  renderAuth();
-  await loadInterpreters();
-  fillFacets();
-  render();
+  try {
+    await loadMe();
+    renderAuth();
+    await loadInterpreters();
+    fillFacets();
+    render();
+  } catch (error) {
+    console.error(error);
+    $("#count").textContent = "Interpreter search is currently unavailable.";
+    $("#results").innerHTML = '<button type="button" id="retry-search">Try again</button>';
+  }
 }
 
 function showSignup(note) {
-  dlg.innerHTML = `<h3>Sign up</h3>${note ? `<p class="error">${esc(note)}</p>` : ""}
+  dlg.innerHTML = `<h2 id="dialog-title">Sign up</h2>${note ? `<p class="error" role="alert">${esc(note)}</p>` : ""}
     <form id="su"><label>I am an <select name="role"><option value="organization">Organization (hospital, court, school, agency)</option><option value="interpreter">Interpreter</option></select></label>
     <label>Name <input name="full_name" required maxlength="100"></label>
     <div id="orgf"><label>Organization name <input name="org_name" required maxlength="150"></label></div>
@@ -152,7 +182,7 @@ function showSignup(note) {
 }
 
 function showLogin() {
-  dlg.innerHTML = `<h3>Log in</h3><form id="li"><label>Email <input type="email" name="email" required></label>
+  dlg.innerHTML = `<h2 id="dialog-title">Log in</h2><form id="li"><label>Email <input type="email" name="email" required></label>
     <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
     <div class="row"><button>Log in</button><button type="button" class="secondary" data-close>Cancel</button></div></form>`;
   $("#li").onsubmit = async e => {
@@ -184,7 +214,7 @@ function showAccount() {
       <label><input type="checkbox" id="avail" ${i.available ? "checked" : ""}> Available</label>
       <p class="muted">${i.verified ? "Verified." : "Not verified. Verification is granted after we review your certifications."}${i.featured ? " Featured." : ""}</p>`;
   }
-  dlg.innerHTML = `<h3>Account</h3>${body}<div class="row"><button class="secondary" data-close>Close</button></div>`;
+  dlg.innerHTML = `<h2 id="dialog-title">Account</h2>${body}<div class="row"><button type="button" class="secondary" data-close>Close</button></div>`;
   $("#phone")?.addEventListener("change", e => attempt(async () => {
     const phone = e.target.value.slice(0, 40);
     check(await sb.from("interpreter_contacts").update({ phone }).eq("interpreter_id", me.user.id));
@@ -201,6 +231,7 @@ function showAccount() {
 document.addEventListener("click", e => {
   const t = e.target;
   if (t.dataset.close !== undefined) dlg.close();
+  if (t.id === "retry-search") refresh();
   if (t.dataset.bill) {
     attempt(async () => {
       const body = t.dataset.bill === "portal" ? { action: "portal" } : { action: "checkout", interval: t.dataset.bill };
@@ -218,9 +249,10 @@ document.addEventListener("click", e => {
   }
 });
 
+initAccessibility();
 let timer;
 $("#filters").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(render, 150); });
 sb.auth.onAuthStateChange((event) => { if (event === "SIGNED_IN" || event === "SIGNED_OUT") refresh(); });
 const billing = new URLSearchParams(location.search).get("billing");
 if (billing === "success") alert("Thanks! Your plan will update in a moment.");
-refresh().catch(e => alert(e.message));
+refresh();

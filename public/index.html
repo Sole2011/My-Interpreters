@@ -7,55 +7,72 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to main content</a>
 <header>
   <h1>Interpreter Directory</h1>
-  <nav>
+  <nav aria-label="Primary navigation">
     <a href="#search">Find interpreters</a>
     <a href="#pricing">Pricing</a>
     <span id="auth"></span>
   </nav>
+  <div class="accessibility-controls" role="group" aria-label="Display settings">
+    <button type="button" class="secondary" id="text-smaller" aria-label="Decrease text size">A-</button>
+    <button type="button" class="secondary" id="text-larger" aria-label="Increase text size">A+</button>
+    <button type="button" class="secondary" id="text-reset">Reset text size</button>
+    <button type="button" class="secondary" id="contrast-toggle" aria-pressed="false">High contrast</button>
+  </div>
 </header>
 
-<main>
-  <section id="search">
-    <h2>Find an interpreter</h2>
-    <form id="filters">
-      <input name="q" placeholder="Name or city">
-      <select name="language"><option value="">Any language</option></select>
-      <select name="specialty"><option value="">Any specialty</option></select>
-      <select name="mode">
+<main id="main" tabindex="-1">
+  <section id="search" aria-labelledby="search-title">
+    <h2 id="search-title">Find an interpreter</h2>
+    <form id="filters" aria-label="Interpreter search filters">
+      <label class="field">Name or city
+        <input name="q" type="search" autocomplete="off">
+      </label>
+      <label class="field">Language
+        <select name="language"><option value="">Any language</option></select>
+      </label>
+      <label class="field">Specialty
+        <select name="specialty"><option value="">Any specialty</option></select>
+      </label>
+      <label class="field">Service mode
+        <select name="mode">
         <option value="">Remote or in-person</option>
         <option value="remote">Remote</option>
         <option value="in-person">In-person</option>
-      </select>
-      <input name="maxRate" type="number" min="0" placeholder="Max $/hr">
-      <label><input type="checkbox" name="verified"> Verified only</label>
-      <label><input type="checkbox" name="available"> Available now</label>
+        </select>
+      </label>
+      <label class="field">Maximum hourly rate in dollars
+        <input name="maxRate" type="number" min="0" inputmode="decimal">
+      </label>
+      <label class="check"><input type="checkbox" name="verified"> Verified only</label>
+      <label class="check"><input type="checkbox" name="available"> Available now</label>
     </form>
-    <p id="count"></p>
-    <div id="results"></div>
+    <p id="count" role="status" aria-live="polite" aria-atomic="true"></p>
+    <div id="results" aria-label="Interpreter listings"></div>
   </section>
 
-  <section id="pricing">
-    <h2>Pricing</h2>
+  <section id="pricing" aria-labelledby="pricing-title">
+    <h2 id="pricing-title">Pricing</h2>
     <div class="tiers">
-      <div class="card"><h3>Organizations: Free</h3>
-        <p>Search and see name, languages, city, rate. Contact details hidden.</p><p><b>$0</b></p></div>
-      <div class="card"><h3>Organizations: Pro</h3>
-        <p>10 unlocked contacts / month.</p><p><b>$49/mo</b> or $490/yr (2 months free)</p></div>
-      <div class="card"><h3>Organizations: Unlimited</h3>
-        <p>For hospital systems and agencies.</p><p><b>Custom quote</b></p></div>
-      <div class="card"><h3>Interpreters: Free</h3>
-        <p>Listed in search, ranked lower. Keep 100% of your pay.</p><p><b>$0</b></p></div>
-      <div class="card"><h3>Interpreters: Featured</h3>
-        <p>Top placement (5 slots per language) plus view and unlock stats.</p><p><b>$19/mo</b></p></div>
-      <div class="card"><h3>Verification</h3>
-        <p>Badge after certification check (CCHI, NBCMI, court).</p><p><b>$29 one-time</b></p></div>
+      <article class="card"><h3>Organizations: Free</h3>
+        <p>Search and see name, languages, city, rate. Contact details hidden.</p><p><b>$0</b></p></article>
+      <article class="card"><h3>Organizations: Pro</h3>
+        <p>10 unlocked contacts / month.</p><p><b>$49/mo</b> or $490/yr (2 months free)</p></article>
+      <article class="card"><h3>Organizations: Unlimited</h3>
+        <p>For hospital systems and agencies.</p><p><b>Custom quote</b></p></article>
+      <article class="card"><h3>Interpreters: Free</h3>
+        <p>Listed in search, ranked lower. Keep 100% of your pay.</p><p><b>$0</b></p></article>
+      <article class="card"><h3>Interpreters: Featured</h3>
+        <p>Top placement (5 slots per language) plus view and unlock stats.</p><p><b>$19/mo</b></p></article>
+      <article class="card"><h3>Verification</h3>
+        <p>Badge after certification check (CCHI, NBCMI, court).</p><p><b>$29 one-time</b></p></article>
     </div>
   </section>
 </main>
 
-<dialog id="dlg"></dialog>
+<dialog id="dlg" aria-labelledby="dialog-title"></dialog>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
