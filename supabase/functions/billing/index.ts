@@ -1,4 +1,4 @@
-// Creates Stripe Checkout / Customer Portal sessions for the signed-in organization.
+// Creates Stripe Checkout / Customer Portal sessions for a signed-in customer account.
 import Stripe from "npm:stripe@17";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
 
   const { data: profile } = await admin.from("profiles")
     .select("role, plan, stripe_customer_id, org_name, full_name").eq("id", user.id).single();
-  if (profile?.role !== "organization") return reply({ error: "Organizations only" }, 403);
+  if (!profile || !["organization", "personal"].includes(profile.role)) return reply({ error: "Customer accounts only" }, 403);
 
   const { action, interval } = await req.json().catch(() => ({}));
 

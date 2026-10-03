@@ -47,8 +47,9 @@ async function loadMe() {
 
 function renderAuth() {
   const p = me?.profile;
+  const accountLabel = p?.role === "interpreter" ? "interpreter" : `${p?.role === "personal" ? "personal" : "organization"}: ${esc(p?.plan)}`;
   $("#auth").innerHTML = me
-    ? `${esc(p?.full_name || me.user.email)} (${p?.role === "organization" ? "org: " + esc(p.plan) : "interpreter"}) <button type="button" class="secondary" id="me">Account</button> <button type="button" class="secondary" id="out">Log out</button>`
+    ? `${esc(p?.full_name || me.user.email)} (${accountLabel}) <button type="button" class="secondary" id="me">Account</button> <button type="button" class="secondary" id="out">Log out</button>`
     : `<button type="button" class="secondary" id="in">Log in</button> <button type="button" id="up">Sign up</button>`;
   $("#in")?.addEventListener("click", showLogin);
   $("#up")?.addEventListener("click", () => showSignup());
@@ -61,7 +62,7 @@ async function loadInterpreters() {
     .select("id, display_name, city, state, remote, in_person, hourly_rate, specialties, verified, featured, available, interpreter_languages(language), certifications(name,scope)"));
   all = data;
   contacts = new Map();
-  if (me?.profile?.role === "organization") {
+  if (["organization", "personal"].includes(me?.profile?.role)) {
     const ids = check(await sb.from("unlocks").select("interpreter_id")).map(r => r.interpreter_id);
     // Re-calling for an already unlocked contact does not use up a unlock.
     await Promise.all(ids.map(async id => {
@@ -143,7 +144,7 @@ async function refresh() {
 
 function showSignup(note) {
   dlg.innerHTML = `<h2 id="dialog-title">Sign up</h2>${note ? `<p class="error" role="alert">${esc(note)}</p>` : ""}
-    <form id="su"><label>I am an <select name="role"><option value="organization">Organization (hospital, court, school, agency)</option><option value="interpreter">Interpreter</option></select></label>
+    <form id="su"><label>I am an <select name="role"><option value="organization">Organization (hospital, court, school, agency)</option><option value="personal">Personal use</option><option value="interpreter">Interpreter</option></select></label>
     <label>Name <input name="full_name" required maxlength="100"></label>
     <div id="orgf"><label>Organization name <input name="org_name" required maxlength="150"></label></div>
     <label>Email <input type="email" name="email" required></label>
@@ -153,8 +154,9 @@ function showSignup(note) {
   const form = $("#su");
   const draw = () => {
     const isInt = form.role.value === "interpreter";
-    $("#orgf").hidden = isInt;
-    form.org_name.required = !isInt;
+    const isOrg = form.role.value === "organization";
+    $("#orgf").hidden = !isOrg;
+    form.org_name.required = isOrg;
     $("#extra").innerHTML = isInt
       ? `<label>Languages (comma separated) <input name="languages" placeholder="ASL, Spanish" required></label>
          <label>Specialties (comma separated) <input name="specialties" placeholder="conference, legal, medical, education, other"></label>
@@ -182,7 +184,7 @@ function showSignup(note) {
     const f = Object.fromEntries(new FormData(form));
     const data = { role: f.role, full_name: f.full_name };
     if (f.role === "organization") data.org_name = f.org_name;
-    else Object.assign(data, {
+    else if (f.role === "interpreter") Object.assign(data, {
       languages: split(f.languages), specialties: split(f.specialties).map(s => s.toLowerCase()), certs: split(f.certs),
       certification_scope: f.certification_scope,
       city: f.city, state: f.state, phone: f.phone, hourly_rate: +f.rate, remote: !!f.remote, in_person: !!f.in_person,
@@ -217,10 +219,11 @@ function showLogin() {
 function showAccount() {
   const p = me.profile;
   let body = `<p>${esc(me.user.email)}</p>`;
-  if (p.role === "organization") {
+  if (p.role !== "interpreter") {
     const limit = { free: 0, pro: 10 }[p.plan];
+    const accountType = p.role === "personal" ? "Personal account" : "Organization account";
     body += `<p>Plan: <b>${esc(p.plan)}</b> · unlocks this month: ${esc(p.unlocks_used)}${limit === undefined ? "" : " / " + limit}</p>
-      <p class="muted">${p.org_verified ? "Organization verified." : "Organization not verified yet. You can unlock contacts once we verify you."}</p>
+      <p class="muted">${p.account_verified ? `${accountType} verified.` : `${accountType} not verified yet. You can unlock contacts once we verify your account.`}</p>
       <div class="row">${p.plan === "free"
         ? `<button data-bill="month">Pro $49/mo</button><button data-bill="year">Pro $490/yr</button>`
         : p.stripe_customer_id ? `<button class="secondary" data-bill="portal">Manage billing</button>` : ""}</div>`;
@@ -258,7 +261,7 @@ document.addEventListener("click", e => {
     });
   }
   if (t.dataset.unlock) {
-    if (!me) return showSignup("Sign up as an organization to unlock contacts.");
+    if (!me) return showSignup("Sign up for personal or organization use to unlock contacts.");
     attempt(async () => {
       check(await sb.rpc("unlock_contact", { p_interpreter_id: t.dataset.unlock }));
       await refresh();
