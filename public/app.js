@@ -58,7 +58,7 @@ function renderAuth() {
 
 async function loadInterpreters() {
   const data = check(await sb.from("interpreters")
-    .select("id, display_name, city, state, remote, in_person, hourly_rate, specialties, verified, featured, available, interpreter_languages(language), certifications(name)"));
+    .select("id, display_name, city, state, remote, in_person, hourly_rate, specialties, verified, featured, available, interpreter_languages(language), certifications(name,scope)"));
   all = data;
   contacts = new Map();
   if (me?.profile?.role === "organization") {
@@ -73,14 +73,15 @@ async function loadInterpreters() {
 
 function fillFacets() {
   const langs = [...new Set(["ASL", "Spanish", ...all.flatMap(i => i.interpreter_languages.map(l => l.language))])].sort();
-  const specs = [...new Set(["conference", "legal", "medical", ...all.flatMap(i => i.specialties || []).map(s => s.toLowerCase())])].sort();
+  const specs = [...new Set(["conference", "education", "legal", "medical", "other", ...all.flatMap(i => i.specialties || []).map(s => s.toLowerCase())])].sort();
   const certs = [...new Set(["CCHI", "NBCMI", "Court certified", ...all.flatMap(i => (i.certifications || []).map(c => c.name)).filter(Boolean)])].sort();
-  for (const [name, vals] of [["language", langs], ["specialty", specs], ["certification", certs]]) {
+  const scopes = ["international", "local", "national", "state"];
+  for (const [name, vals] of [["language", langs], ["specialty", specs], ["certification", certs], ["certification_scope", scopes]]) {
     const sel = document.querySelector(`[name=${name}]`);
     const cur = sel.value;
     sel.length = 1;
     vals.forEach(v => {
-      const label = name === "specialty" ? v.charAt(0).toUpperCase() + v.slice(1) : v;
+      const label = ["specialty", "certification_scope"].includes(name) ? v.charAt(0).toUpperCase() + v.slice(1) : v;
       sel.add(new Option(label, v));
     });
     sel.value = cur;
@@ -96,6 +97,7 @@ function filtered() {
       (!f.language || i.interpreter_languages.some(l => l.language === f.language)) &&
       (!f.specialty || (i.specialties || []).includes(f.specialty)) &&
       (!f.certification || (i.certifications || []).some(c => c.name === f.certification)) &&
+      (!f.certification_scope || (i.certifications || []).some(c => c.scope === f.certification_scope)) &&
       (!f.mode || (f.mode === "remote" ? i.remote : i.in_person)) &&
       (!f.maxRate || Number(i.hourly_rate) <= +f.maxRate) &&
       (!f.verified || i.verified) &&
@@ -117,7 +119,7 @@ function render() {
       <div>${i.interpreter_languages.map(l => `<span class="tag">${esc(l.language)}</span>`).join("")}</div>
       <div>${(i.specialties || []).map(s => `<span class="tag">${esc(s)}</span>`).join("")}</div>
       <p class="muted">${esc([i.city, i.state].filter(Boolean).join(", "))} · ${modes} · ${i.hourly_rate != null ? "$" + esc(i.hourly_rate) + "/hr" : "rate on request"} · ${i.available ? "Available" : "Unavailable"}</p>
-      ${i.certifications.length ? `<p class="muted">Certifications: ${i.certifications.map(x => esc(x.name)).join(", ")}</p>` : ""}
+      ${i.certifications.length ? `<p class="muted">Certifications: ${i.certifications.map(x => `${esc(x.name)}${x.scope ? ` (${esc(x.scope.charAt(0).toUpperCase() + x.scope.slice(1))})` : ""}`).join(", ")}</p>` : ""}
       ${c
         ? `<div class="locked">Email: ${esc(c.email)}<br>Phone: ${esc(c.phone || "not provided")}</div>`
         : `<div class="locked">Email and phone hidden</div><div class="row"><button type="button" data-unlock="${esc(i.id)}" aria-label="Unlock contact for ${esc(i.display_name)}">Unlock contact</button></div>`}
@@ -155,8 +157,17 @@ function showSignup(note) {
     form.org_name.required = !isInt;
     $("#extra").innerHTML = isInt
       ? `<label>Languages (comma separated) <input name="languages" placeholder="ASL, Spanish" required></label>
-        <label>Specialties (comma separated) <input name="specialties" placeholder="medical, legal, conference"></label>
+         <label>Specialties (comma separated) <input name="specialties" placeholder="conference, legal, medical, education, other"></label>
         <label>Certifications (comma separated) <input name="certs" placeholder="CCHI, NBCMI, Court certified"></label>
+         <label>Scope for these certifications
+           <select name="certification_scope">
+             <option value="">Choose a scope</option>
+             <option value="national">National</option>
+             <option value="international">International</option>
+             <option value="state">State</option>
+             <option value="local">Local</option>
+           </select>
+         </label>
          <label>City <input name="city" required></label>
          <label>State <input name="state"></label>
          <label>Phone (shown only to organizations that unlock you) <input name="phone"></label>
@@ -173,6 +184,7 @@ function showSignup(note) {
     if (f.role === "organization") data.org_name = f.org_name;
     else Object.assign(data, {
       languages: split(f.languages), specialties: split(f.specialties).map(s => s.toLowerCase()), certs: split(f.certs),
+      certification_scope: f.certification_scope,
       city: f.city, state: f.state, phone: f.phone, hourly_rate: +f.rate, remote: !!f.remote, in_person: !!f.in_person,
     });
     await attempt(async () => {
