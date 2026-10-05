@@ -340,9 +340,11 @@ function showSignup(note) {
     form.org_name.required = isOrg;
     $("#extra").innerHTML = isInt
       ? `<label>Languages (comma separated) <input name="languages" placeholder="ASL, Spanish" required></label>
-         <label>Specialties (comma separated) <input name="specialties" placeholder="conference, legal, medical, education, other"></label>
+        <label>Other languages (optional) <input name="other_languages" placeholder="e.g. French, Mandarin"></label>
+        <label>Specialties (comma separated) <input name="specialties" placeholder="conference, legal, medical, education, other"></label>
+        <label>Other expertise (optional) <input name="other_specialties" placeholder="e.g. immigration, mental health"></label>
         <label>Certifications (comma separated) <input name="certs" placeholder="CCHI, NBCMI, Court certified"></label>
-         <fieldset class="filter-checks"><legend>Certification scope (select all that apply)</legend>
+         <fieldset class="filter-checks"><legend>Scope of interpretation</legend>
            <label class="check"><input type="checkbox" name="certification_scopes" value="national"> National</label>
            <label class="check"><input type="checkbox" name="certification_scopes" value="international"> International</label>
            <label class="check"><input type="checkbox" name="certification_scopes" value="state"> State</label>
@@ -364,7 +366,9 @@ function showSignup(note) {
     const data = { role: f.role, full_name: f.full_name };
     if (f.role === "organization") data.org_name = f.org_name;
     else if (f.role === "interpreter") Object.assign(data, {
-      languages: split(f.languages), specialties: split(f.specialties).map(s => s.toLowerCase()), certs: split(f.certs),
+      languages: [...new Set([...split(f.languages), ...split(f.other_languages)])],
+      specialties: [...new Set([...split(f.specialties), ...split(f.other_specialties)])].map(s => s.toLowerCase()),
+      certs: split(f.certs),
       certification_scopes: formData.getAll("certification_scopes"),
       city: f.city, state: f.state, phone: f.phone, hourly_rate: +f.rate, remote: !!f.remote, in_person: !!f.in_person,
     });
