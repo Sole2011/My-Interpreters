@@ -47,11 +47,12 @@ function renderAuth() {
   const p = me?.profile;
   const accountLabel = p?.role === "interpreter" ? "interpreter" : `${p?.role === "personal" ? "personal" : "organization"}: ${esc(p?.plan)}`;
   $("#auth").innerHTML = me
-    ? `${esc(p?.full_name || me.user.email)} (${accountLabel}) <button type="button" class="secondary" id="messages">Messages</button> <button type="button" class="secondary" id="me">Account</button> <button type="button" class="secondary" id="out">Log out</button>`
+    ? `${esc(p?.full_name || me.user.email)} (${accountLabel}) <button type="button" class="secondary" id="assignments">Assignments</button> <button type="button" class="secondary" id="messages">Messages</button> <button type="button" class="secondary" id="me">Account</button> <button type="button" class="secondary" id="out">Log out</button>`
     : `<button type="button" class="secondary" id="in">Log in</button> <button type="button" id="up">Sign up</button>`;
   $("#in")?.addEventListener("click", showLogin);
   $("#up")?.addEventListener("click", () => showSignup());
   $("#out")?.addEventListener("click", async () => { await sb.auth.signOut(); await refresh(); });
+  $("#assignments")?.addEventListener("click", showAssignments);
   $("#messages")?.addEventListener("click", showInbox);
   $("#me")?.addEventListener("click", showAccount);
 }
@@ -125,7 +126,7 @@ function render() {
       <div>${i.interpreter_languages.map(l => `<span class="tag">${esc(l.language)}</span>`).join("")}${(i.specialties || []).map(s => `<span class="tag alt">${esc(s)}</span>`).join("")}</div>
       ${i.certifications.length ? `<p class="muted">Certifications: ${i.certifications.map(x => `${esc(x.name)}${x.scope ? ` (${esc(x.scope.charAt(0).toUpperCase() + x.scope.slice(1))})` : ""}`).join(", ")}</p>` : ""}
       <div class="locked">Email and phone are private. Message through Exponent.</div>
-      ${canMessage ? `<div class="row"><button type="button" data-message-to="${esc(i.id)}" aria-label="Message ${esc(i.display_name)}">Message interpreter</button></div>` : ""}
+      ${canMessage ? `<div class="row"><button type="button" data-assignment-to="${esc(i.id)}" aria-label="Request an assignment with ${esc(i.display_name)}">Request assignment</button><button type="button" class="secondary" data-message-to="${esc(i.id)}" aria-label="Message ${esc(i.display_name)}">Message</button></div>` : ""}
       </article>`;
   }).join("");
 }
@@ -142,6 +143,77 @@ async function refresh() {
     $("#count").textContent = "Interpreter search is currently unavailable.";
     $("#results").innerHTML = '<button type="button" id="retry-search">Try again</button>';
   }
+}
+
+async function showAssignments() {
+  if (!me) return showLogin();
+  await attempt(async () => {
+    const rows = check(await sb.from("assignments")
+      .select("id, customer_id, requested_interpreter_id, current_interpreter_id, language, specialty, city, state, service_mode, scheduled_for, status, current_response_deadline, accepted_at")
+      .order("created_at", { ascending: false }));
+    const isInterpreter = me.profile.role === "interpreter";
+    const list = rows.length
+      ? `<ul class="assignment-list">${rows.map(a => {
+          const selected = all.find(i => i.id === a.current_interpreter_id)?.display_name || "Finding a match";
+          const status = a.status === "offered"
+            ? `Awaiting ${isInterpreter ? "your response" : esc(selected)} until ${esc(new Date(a.current_response_deadline).toLocaleString())}`
+            : a.status.charAt(0).toUpperCase() + a.status.slice(1);
+          const actions = isInterpreter && a.status === "offered" && a.current_interpreter_id === me.user.id
+            ? `<div class="row"><button type="button" data-assignment-response="${esc(a.id)}" data-accept="true">Accept</button><button type="button" class="secondary" data-assignment-response="${esc(a.id)}" data-accept="false">Decline</button></div>`
+            : "";
+          return `<li class="assignment-item"><div><h3>${esc(a.language)} · ${esc(a.specialty)}</h3><p>${esc([a.city, a.state].filter(Boolean).join(", ")) || "Remote"} · ${esc(a.service_mode)} · ${esc(new Date(a.scheduled_for).toLocaleString())}</p><p class="muted">${status}</p></div>${actions}</li>`;
+        }).join("")}</ul>`
+      : '<p class="empty">No assignments yet. Request one from an interpreter profile.</p>';
+    dlg.innerHTML = `<h2 id="dialog-title">Assignments</h2>${list}<div class="row"><button type="button" class="secondary" data-close>Close</button></div>`;
+    if (!dlg.open) dlg.showModal();
+  });
+}
+
+function showAssignmentForm(interpreterId) {
+  if (!me) return showSignup("Create a free personal or organization account to request an assignment.");
+  if (me.profile.role === "interpreter") return showAssignments();
+  const interpreter = all.find(i => i.id === interpreterId);
+  if (!interpreter) return;
+  const languages = [...new Set(["ASL", "Spanish", ...all.flatMap(i => i.interpreter_languages.map(l => l.language))])].sort();
+  const specialties = ["conference", "education", "legal", "medical", "other"];
+  const soon = new Date(Date.now() + 2 * 60 * 60 * 1000);
+  soon.setMinutes(soon.getMinutes() - soon.getTimezoneOffset());
+  const minDate = soon.toISOString().slice(0, 16);
+  dlg.innerHTML = `<h2 id="dialog-title">Request ${esc(interpreter.display_name)}</h2>
+    <p class="muted">The interpreter has 24 hours (or until one hour before the assignment) to accept. If they don't, Exponent offers it to the next matching available interpreter.</p>
+    <form id="assignment-form">
+      <label>Language <select name="language" required>${languages.map(language => `<option value="${esc(language)}" ${interpreter.interpreter_languages.some(l => l.language === language) ? "selected" : ""}>${esc(language)}</option>`).join("")}</select></label>
+      <label>Specialty <select name="specialty" required>${specialties.map(specialty => `<option value="${specialty}" ${(interpreter.specialties || []).includes(specialty) ? "selected" : ""}>${specialty[0].toUpperCase() + specialty.slice(1)}</option>`).join("")}</select></label>
+      <label>Service mode <select name="service_mode"><option value="remote" ${interpreter.remote ? "selected" : ""}>Remote</option><option value="in-person" ${interpreter.in_person ? "selected" : ""}>In person</option></select></label>
+      <label>Assignment city <input name="city" maxlength="100" placeholder="Required for in-person assignments"></label>
+      <label>State <input name="state" maxlength="50"></label>
+      <label>Date and time <input type="datetime-local" name="scheduled_for" min="${minDate}" required></label>
+      <label>Maximum hourly rate ($, optional) <input name="max_hourly_rate" type="number" min="0" inputmode="decimal"></label>
+      <div class="row"><button type="submit">Send assignment request</button><button type="button" class="secondary" data-close>Cancel</button></div>
+    </form>`;
+  const modeSelect = $("[name=service_mode]");
+  const cityInput = $("[name=city]");
+  const updateCityRequirement = () => { cityInput.required = modeSelect.value === "in-person"; };
+  modeSelect.addEventListener("change", updateCityRequirement);
+  updateCityRequirement();
+  $("#assignment-form").onsubmit = async event => {
+    event.preventDefault();
+    const fields = Object.fromEntries(new FormData(event.currentTarget));
+    await attempt(async () => {
+      check(await sb.rpc("request_interpreter_assignment", {
+        p_interpreter_id: interpreterId,
+        p_language: fields.language,
+        p_specialty: fields.specialty,
+        p_city: fields.city,
+        p_state: fields.state,
+        p_service_mode: fields.service_mode,
+        p_scheduled_for: new Date(fields.scheduled_for).toISOString(),
+        p_max_hourly_rate: fields.max_hourly_rate ? Number(fields.max_hourly_rate) : null,
+      }));
+      await showAssignments();
+    });
+  };
+  if (!dlg.open) dlg.showModal();
 }
 
 async function showInbox() {
@@ -327,6 +399,16 @@ document.addEventListener("click", e => {
   if (t.id === "retry-search") refresh();
   if (t.id === "clear-filters") { $("#filters").reset(); render(); }
   if (t.dataset.openSignup !== undefined) showSignup();
+  if (t.dataset.assignmentTo) showAssignmentForm(t.dataset.assignmentTo);
+  if (t.dataset.assignmentResponse) {
+    attempt(async () => {
+      check(await sb.rpc("respond_to_assignment", {
+        p_assignment_id: t.dataset.assignmentResponse,
+        p_accept: t.dataset.accept === "true",
+      }));
+      await showAssignments();
+    });
+  }
   if (t.dataset.quickLanguage) {
     $("#filters").reset();
     $("[name=language]").value = t.dataset.quickLanguage;
