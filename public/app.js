@@ -130,7 +130,6 @@ function render() {
       </div>
       <p class="badges">
         ${i.verified ? '<span class="badge ok">Verified</span>' : ""}
-        ${i.featured ? '<span class="badge feat">Featured</span>' : ""}
         <span class="badge ${i.available ? "avail" : "busy"}">${i.available ? "Available" : "Unavailable"}</span>
       </p>
       <div>${i.interpreter_languages.map(l => `<span class="tag">${esc(l.language)}</span>`).join("")}${(i.specialties || []).map(s => `<span class="tag alt">${esc(s)}</span>`).join("")}</div>
@@ -234,19 +233,17 @@ function showAccount() {
   const p = me.profile;
   let body = `<p>${esc(me.user.email)}</p>`;
   if (p.role !== "interpreter") {
-    const limit = { free: 0, pro: 10 }[p.plan];
+    const limit = { free: 0 }[p.plan];
     const accountType = p.role === "personal" ? "Personal account" : "Organization account";
     body += `<p>Plan: <b>${esc(p.plan)}</b> · unlocks this month: ${esc(p.unlocks_used)}${limit === undefined ? "" : " / " + limit}</p>
       <p class="muted">${p.account_verified ? `${accountType} verified.` : `${accountType} not verified yet. You can unlock contacts once we verify your account.`}</p>
-      <div class="row">${p.plan === "free"
-        ? `<button data-bill="month">Pro $49/mo</button><button data-bill="year">Pro $490/yr</button>`
-        : p.stripe_customer_id ? `<button class="secondary" data-bill="portal">Manage billing</button>` : ""}</div>`;
+      <p class="muted">${p.plan === "free" ? "Unlimited plans are custom-quoted." : ""}</p>`;
   } else {
     const i = me.interpreter;
     body += `<p>Contacts unlocked by organizations: <b>${esc(me.unlockCount)}</b></p>
       <label>Phone (shown to unlocking orgs) <input id="phone" value="${esc(me.user.user_metadata?.phone)}" maxlength="40"></label>
       <label><input type="checkbox" id="avail" ${i.available ? "checked" : ""}> Available</label>
-      <p class="muted">${i.verified ? "Verified." : "Not verified. Verification is granted after we review your certifications."}${i.featured ? " Featured." : ""}</p>`;
+      <p class="muted">${i.verified ? "Verified." : "Not verified. Verification is $10/month after we review your certifications."}</p>`;
   }
   dlg.innerHTML = `<h2 id="dialog-title">Account</h2>${body}<div class="row"><button type="button" class="secondary" data-close>Close</button></div>`;
   $("#phone")?.addEventListener("change", e => attempt(async () => {
