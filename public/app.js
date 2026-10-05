@@ -226,7 +226,7 @@ function showSignup(note) {
     <label>Email <input type="email" name="email" required></label>
     <label>Password (8+ characters) <input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
     <div id="extra"></div>
-    <div class="row"><button>Create free account</button><button type="button" class="secondary" data-close>Cancel</button></div></form>`;
+    <div class="row"><button>Create account</button><button type="button" class="secondary" data-close>Cancel</button></div></form>`;
   const form = $("#su");
   const draw = () => {
     const isInt = form.role.value === "interpreter";
