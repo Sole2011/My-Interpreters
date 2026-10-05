@@ -6,6 +6,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const split = s => (s || "").split(",").map(x => x.trim()).filter(Boolean);
 const attempt = async fn => { try { return await fn(); } catch (e) { alert(e.message || "Something went wrong"); } };
 const check = ({ data, error }) => { if (error) throw error; return data; };
+const POLICY_VERSIONS = { terms: "1.0", privacy: "1.0", rules: "1.0" };
 
 function initAccessibility() {
   let preferences = {};
@@ -57,11 +58,12 @@ function renderAuth() {
   const p = me?.profile;
   const accountLabel = p?.role === "interpreter" ? "interpreter" : `${p?.role === "personal" ? "personal" : "organization"}: ${esc(p?.plan)}`;
   $("#auth").innerHTML = me
-    ? `${esc(p?.full_name || me.user.email)} (${accountLabel}) <button type="button" class="secondary" id="assignments">Assignments</button> <button type="button" class="secondary" id="messages">Messages</button> <button type="button" class="secondary" id="me">Account</button> <button type="button" class="secondary" id="out">Log out</button>`
+    ? `${esc(p?.full_name || me.user.email)} (${accountLabel}) <button type="button" class="secondary" id="updates">Updates</button> <button type="button" class="secondary" id="assignments">Assignments</button> <button type="button" class="secondary" id="messages">Messages</button> <button type="button" class="secondary" id="me">Account</button> <button type="button" class="secondary" id="out">Log out</button>`
     : `<button type="button" class="secondary" id="in">Log in</button> <button type="button" id="up">Sign up</button>`;
   $("#in")?.addEventListener("click", showLogin);
   $("#up")?.addEventListener("click", () => showSignup());
   $("#out")?.addEventListener("click", async () => { await sb.auth.signOut(); await refresh(); });
+  $("#updates")?.addEventListener("click", showUpdates);
   $("#assignments")?.addEventListener("click", showAssignments);
   $("#messages")?.addEventListener("click", showInbox);
   $("#me")?.addEventListener("click", showAccount);
@@ -155,6 +157,15 @@ async function refresh() {
   try {
     await loadMe();
     renderAuth();
+    if (me) {
+      const pending = check(await sb.from("site_notifications")
+        .select("id, category, title, body, version, requires_ack")
+        .eq("requires_ack", true).is("acknowledged_at", null));
+      if (pending.length) {
+        showRequiredPolicyUpdates(pending);
+        return;
+      }
+    }
     await loadInterpreters();
     fillFacets();
     render();
@@ -163,6 +174,53 @@ async function refresh() {
     $("#count").textContent = "Interpreter search is currently unavailable.";
     $("#results").innerHTML = '<button type="button" id="retry-search">Try again</button>';
   }
+}
+
+async function showRequiredPolicyUpdates(notices) {
+  const items = notices.map(n => `<article class="notice-item"><h3>${esc(n.title)}</h3><p>${esc(n.body)}</p></article>`).join("");
+  dlg.innerHTML = `<h2 id="dialog-title">Policy updates</h2>${items}
+    <form id="policy-ack-form"><label class="check"><input type="checkbox" name="ack" required> I have reviewed and accept these updated policies.</label>
+      <div class="row"><button type="submit">Accept and continue</button></div></form>`;
+  $("#policy-ack-form").onsubmit = async event => {
+    event.preventDefault();
+    await attempt(async () => {
+      for (const notice of notices) check(await sb.rpc("acknowledge_site_notification", { p_notification_id: notice.id }));
+      await refresh();
+    });
+  };
+  if (!dlg.open) dlg.showModal();
+}
+
+async function showUpdates() {
+  if (!me) return showLogin();
+  await attempt(async () => {
+    const notifications = check(await sb.from("site_notifications")
+      .select("id, category, title, body, version, requires_ack, created_at, read_at, acknowledged_at")
+      .order("created_at", { ascending: false }));
+    const list = notifications.length
+      ? `<ul class="notice-list">${notifications.map(n => `<li class="notice-item ${n.read_at ? "read" : "unread"}">
+          <p class="notice-meta">${n.category === "policy" ? "Policy update" : "Feature update"} · ${esc(new Date(n.created_at).toLocaleString())}</p>
+          <h3>${esc(n.title)}</h3><p>${esc(n.body)}</p>
+          ${n.requires_ack && !n.acknowledged_at ? `<button type="button" data-ack-notice="${esc(n.id)}">Review and accept</button>` : n.read_at ? "" : `<button type="button" class="secondary" data-read-notice="${esc(n.id)}">Mark as read</button>`}
+        </li>`).join("")}</ul>`
+      : '<p class="empty">No updates right now.</p>';
+    dlg.innerHTML = `<h2 id="dialog-title">Updates</h2>${list}<div class="row"><button type="button" class="secondary" data-close>Close</button></div>`;
+    if (!dlg.open) dlg.showModal();
+  });
+}
+
+async function acknowledgeNotice(notificationId) {
+  await attempt(async () => {
+    check(await sb.rpc("acknowledge_site_notification", { p_notification_id: notificationId }));
+    await refresh();
+  });
+}
+
+async function markNoticeRead(notificationId) {
+  await attempt(async () => {
+    check(await sb.from("site_notifications").update({ read_at: new Date().toISOString() }).eq("id", notificationId));
+    await showUpdates();
+  });
 }
 
 async function showAssignments() {
@@ -354,6 +412,14 @@ function showSignup(note) {
     <div id="orgf"><label>Organization name <input name="org_name" required maxlength="150"></label></div>
     <label>Email <input type="email" name="email" required></label>
     <label>Password (8+ characters) <input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
+    <details class="policy-copy"><summary>Review Terms, Privacy Notice and Community Rules (v1.0)</summary>
+      <h3>Terms of Use</h3><p>Exponent helps customers find interpreters and request assignments. An assignment is not confirmed until an interpreter accepts it. Users are responsible for accurate information and their agreements with each other.</p>
+      <h3>Privacy Notice</h3><p>Exponent stores account details, interpreter profiles, messages and assignment information to provide the service. Interpreter email and phone details are kept private from public listings.</p>
+      <h3>Community Rules</h3><p>Provide accurate identity and qualification information. Do not impersonate others, harass users, or put private contact details in messages.</p>
+    </details>
+    <label class="check consent-check"><input type="checkbox" name="accept_policies" required> I agree to the current Terms of Use, Privacy Notice and Community Rules (v1.0).</label>
+    <label class="check consent-check"><input type="checkbox" name="required_policy_notifications" required> I agree to receive in-app notices about important Terms, Privacy Notice or Community Rules changes.</label>
+    <label class="check consent-check"><input type="checkbox" name="feature_updates_opt_in"> Notify me in-app about new Exponent features (optional).</label>
     <div id="extra"></div>
     <div class="row"><button>Create account</button><button type="button" class="secondary" data-close>Cancel</button></div></form>`;
   const form = $("#su");
@@ -387,7 +453,16 @@ function showSignup(note) {
     e.preventDefault();
     const formData = new FormData(form);
     const f = Object.fromEntries(formData);
-    const data = { role: f.role, full_name: f.full_name };
+    const data = {
+      role: f.role,
+      full_name: f.full_name,
+      accepted_terms_version: POLICY_VERSIONS.terms,
+      accepted_privacy_version: POLICY_VERSIONS.privacy,
+      accepted_rules_version: POLICY_VERSIONS.rules,
+      required_policy_notifications: f.required_policy_notifications === "on",
+      feature_updates_opt_in: f.feature_updates_opt_in === "on",
+      consented_at: new Date().toISOString(),
+    };
     if (f.role === "organization") data.org_name = f.org_name;
     else if (f.role === "interpreter") Object.assign(data, {
       languages: [...new Set([...split(f.languages), ...split(f.other_languages)])],
@@ -443,6 +518,7 @@ function showAccount() {
       <label><input type="checkbox" id="avail" ${i.available ? "checked" : ""}> Available</label>
       <p class="muted">${i.verified ? "Verified." : "Not verified. Optional $10/month certification verification is planned, but not available yet."}</p>`;
   }
+  body += `<label class="check consent-check"><input type="checkbox" id="feature-updates" ${p.feature_updates_opt_in ? "checked" : ""}> Notify me in-app about new Exponent features.</label>`;
   dlg.innerHTML = `<h2 id="dialog-title">Account</h2>${body}<div class="row"><button type="button" class="secondary" data-close>Close</button></div>`;
   $("#phone")?.addEventListener("change", e => attempt(async () => {
     const phone = e.target.value.slice(0, 40);
@@ -454,6 +530,10 @@ function showAccount() {
     check(await sb.from("interpreters").update({ available: e.target.checked }).eq("id", me.user.id));
     await refresh();
   }));
+  $("#feature-updates")?.addEventListener("change", e => attempt(async () => {
+    check(await sb.rpc("update_feature_updates_preference", { p_enabled: e.target.checked }));
+    me.profile.feature_updates_opt_in = e.target.checked;
+  }));
   dlg.showModal();
 }
 
@@ -463,6 +543,8 @@ document.addEventListener("click", e => {
   if (t.id === "retry-search") refresh();
   if (t.id === "clear-filters") { $("#filters").reset(); render(); }
   if (t.dataset.openSignup !== undefined) showSignup();
+  if (t.dataset.ackNotice) acknowledgeNotice(t.dataset.ackNotice);
+  if (t.dataset.readNotice) markNoticeRead(t.dataset.readNotice);
   if (t.dataset.assignmentTo) showAssignmentForm(t.dataset.assignmentTo);
   if (t.dataset.assignmentResponse) {
     attempt(async () => {
