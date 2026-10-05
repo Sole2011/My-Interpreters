@@ -1,3 +1,4 @@
+const isPreviewMode = () => !window.SUPABASE_URL || window.SUPABASE_URL.includes("YOUR-PROJECT") || !window.SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY.includes("YOUR-ANON-KEY");
 const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
 const $ = s => document.querySelector(s);
 const dlg = $("#dlg");
@@ -32,6 +33,11 @@ function initAccessibility() {
 
 let me = null; // { user, profile, interpreter?, usage? }
 let all = [];
+const PREVIEW_INTERPRETERS = [
+  { id: "preview-asl-medical", display_name: "Sample ASL Interpreter", city: "Example City", state: "CA", remote: true, in_person: true, hourly_rate: 65, specialties: ["medical"], verified: false, featured: false, available: true, interpreter_languages: [{ language: "ASL" }], certifications: [], demo: true },
+  { id: "preview-spanish-legal", display_name: "Sample Spanish Interpreter", city: "Example City", state: "NY", remote: true, in_person: true, hourly_rate: 55, specialties: ["legal"], verified: false, featured: false, available: true, interpreter_languages: [{ language: "Spanish" }], certifications: [], demo: true },
+  { id: "preview-education", display_name: "Sample Education Interpreter", city: "Example City", state: "TX", remote: true, in_person: false, hourly_rate: 50, specialties: ["education", "conference"], verified: false, featured: false, available: true, interpreter_languages: [{ language: "ASL" }, { language: "Spanish" }], certifications: [], demo: true },
+];
 
 async function loadMe() {
   const { data: { session } } = await sb.auth.getSession();
@@ -44,6 +50,10 @@ async function loadMe() {
 }
 
 function renderAuth() {
+  if (isPreviewMode()) {
+    $("#auth").innerHTML = '<span class="preview-note">Preview mode</span>';
+    return;
+  }
   const p = me?.profile;
   const accountLabel = p?.role === "interpreter" ? "interpreter" : `${p?.role === "personal" ? "personal" : "organization"}: ${esc(p?.plan)}`;
   $("#auth").innerHTML = me
@@ -100,7 +110,7 @@ function filtered() {
 
 function render() {
   const list = filtered();
-  $("#count").textContent = `${list.length} interpreter${list.length === 1 ? "" : "s"}`;
+  $("#count").textContent = `${list.length} interpreter${list.length === 1 ? "" : "s"}${isPreviewMode() ? " (sample preview profiles)" : ""}`;
   if (!list.length) {
     $("#results").innerHTML = '<p class="empty">No interpreters match these filters. Try removing a filter or <button type="button" class="link" id="clear-filters">clear all filters</button>.</p>';
     return;
@@ -121,18 +131,27 @@ function render() {
         <p class="rate">${i.hourly_rate != null ? "$" + esc(i.hourly_rate) + "<small>/hr</small>" : "<small>Rate on request</small>"}</p>
       </div>
       <p class="badges">
+        ${i.demo ? '<span class="badge demo">Sample profile</span>' : ""}
         ${i.verified ? '<span class="badge ok">Verified</span>' : ""}
         <span class="badge ${i.available ? "avail" : "busy"}">${i.available ? "Available" : "Unavailable"}</span>
       </p>
       <div>${i.interpreter_languages.map(l => `<span class="tag">${esc(l.language)}</span>`).join("")}${(i.specialties || []).map(s => `<span class="tag alt">${esc(s)}</span>`).join("")}</div>
       ${i.certifications.length ? `<p class="muted">Certifications: ${i.certifications.map(x => `${esc(x.name)}${x.scope ? ` (${esc(x.scope.charAt(0).toUpperCase() + x.scope.slice(1))})` : ""}`).join(", ")}</p>` : ""}
       <div class="locked">Email and phone are private. Message through Exponent.</div>
-      ${canMessage ? `<div class="row"><button type="button" data-assignment-to="${esc(i.id)}" aria-label="Request an assignment with ${esc(i.display_name)}">Request assignment</button><button type="button" class="secondary" data-message-to="${esc(i.id)}" aria-label="Message ${esc(i.display_name)}">Message</button></div>` : ""}
+      ${i.demo ? '<p class="muted">Preview only. Real interpreter profiles will appear when the directory is connected.</p>' : canMessage ? `<div class="row"><button type="button" data-assignment-to="${esc(i.id)}" aria-label="Request an assignment with ${esc(i.display_name)}">Request assignment</button><button type="button" class="secondary" data-message-to="${esc(i.id)}" aria-label="Message ${esc(i.display_name)}">Message</button></div>` : ""}
       </article>`;
   }).join("");
 }
 
 async function refresh() {
+  if (isPreviewMode()) {
+    me = null;
+    all = PREVIEW_INTERPRETERS;
+    renderAuth();
+    fillFacets();
+    render();
+    return;
+  }
   try {
     await loadMe();
     renderAuth();
@@ -324,6 +343,11 @@ function showMessageForm(interpreterId) {
 }
 
 function showSignup(note) {
+  if (isPreviewMode()) {
+    dlg.innerHTML = `<h2 id="dialog-title">Preview mode</h2><p>Interpreter samples are for preview only. Connect Supabase to create accounts and publish real profiles.</p><div class="row"><button type="button" data-close>Close</button></div>`;
+    if (!dlg.open) dlg.showModal();
+    return;
+  }
   dlg.innerHTML = `<h2 id="dialog-title">Sign up</h2>${note ? `<p class="error" role="alert">${esc(note)}</p>` : ""}
     <form id="su"><label>I am an <select name="role"><option value="organization">Organization (hospital, court, school, agency)</option><option value="personal">Personal use</option><option value="interpreter">Interpreter</option></select></label>
     <label>Name <input name="full_name" required maxlength="100"></label>
@@ -384,6 +408,11 @@ function showSignup(note) {
 }
 
 function showLogin() {
+  if (isPreviewMode()) {
+    dlg.innerHTML = `<h2 id="dialog-title">Preview mode</h2><p>Connect Supabase to enable account sign-in.</p><div class="row"><button type="button" data-close>Close</button></div>`;
+    if (!dlg.open) dlg.showModal();
+    return;
+  }
   dlg.innerHTML = `<h2 id="dialog-title">Log in</h2><form id="li"><label>Email <input type="email" name="email" required></label>
     <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
     <div class="row"><button>Log in</button><button type="button" class="secondary" data-close>Cancel</button></div></form>`;
