@@ -118,6 +118,7 @@ function render() {
     const modes = [i.remote && "remote", i.in_person && "in-person"].filter(Boolean).join(" / ");
     const initials = (i.display_name || "?").split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
     const place = [i.city, i.state].filter(Boolean).join(", ");
+    const customerCanUnlock = ["organization", "personal"].includes(me?.profile?.role) && me.profile.plan !== "free";
     return `
     <article class="card ${i.featured ? "featured" : ""}" aria-labelledby="interpreter-${esc(i.id)}-name">
       <div class="card-head">
@@ -136,7 +137,7 @@ function render() {
       ${i.certifications.length ? `<p class="muted">Certifications: ${i.certifications.map(x => `${esc(x.name)}${x.scope ? ` (${esc(x.scope.charAt(0).toUpperCase() + x.scope.slice(1))})` : ""}`).join(", ")}</p>` : ""}
       ${c
         ? `<div class="locked">Email: ${esc(c.email)}<br>Phone: ${esc(c.phone || "not provided")}</div>`
-        : `<div class="locked">Email and phone hidden</div><div class="row"><button type="button" data-unlock="${esc(i.id)}" aria-label="Unlock contact for ${esc(i.display_name)}">Unlock contact</button></div>`}
+        : `<div class="locked">Email and phone hidden</div>${customerCanUnlock ? `<div class="row"><button type="button" data-unlock="${esc(i.id)}" aria-label="Unlock contact for ${esc(i.display_name)}">Unlock contact</button></div>` : '<p class="muted">Contact unlocking will open as the free directory grows.</p>'}`}
       </article>`;
   }).join("");
 }
@@ -163,7 +164,7 @@ function showSignup(note) {
     <label>Email <input type="email" name="email" required></label>
     <label>Password (8+ characters) <input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
     <div id="extra"></div>
-    <div class="row"><button>Create account</button><button type="button" class="secondary" data-close>Cancel</button></div></form>`;
+    <div class="row"><button>Create free account</button><button type="button" class="secondary" data-close>Cancel</button></div></form>`;
   const form = $("#su");
   const draw = () => {
     const isInt = form.role.value === "interpreter";
@@ -233,17 +234,16 @@ function showAccount() {
   const p = me.profile;
   let body = `<p>${esc(me.user.email)}</p>`;
   if (p.role !== "interpreter") {
-    const limit = { free: 0 }[p.plan];
     const accountType = p.role === "personal" ? "Personal account" : "Organization account";
-    body += `<p>Plan: <b>${esc(p.plan)}</b> · unlocks this month: ${esc(p.unlocks_used)}${limit === undefined ? "" : " / " + limit}</p>
-      <p class="muted">${p.account_verified ? `${accountType} verified.` : `${accountType} not verified yet. You can unlock contacts once we verify your account.`}</p>
-      <p class="muted">${p.plan === "free" ? "Unlimited plans are custom-quoted." : ""}</p>`;
+    body += `<p>${accountType} · Free</p>
+      <p class="muted">${p.account_verified ? `${accountType} verified.` : `${accountType} not verified yet.`}</p>
+      <p class="muted">Customer subscriptions are paused while the directory grows. Contact unlocking will open later.</p>`;
   } else {
     const i = me.interpreter;
     body += `<p>Contacts unlocked by organizations: <b>${esc(me.unlockCount)}</b></p>
       <label>Phone (shown to unlocking orgs) <input id="phone" value="${esc(me.user.user_metadata?.phone)}" maxlength="40"></label>
       <label><input type="checkbox" id="avail" ${i.available ? "checked" : ""}> Available</label>
-      <p class="muted">${i.verified ? "Verified." : "Not verified. Verification is $10/month after we review your certifications."}</p>`;
+      <p class="muted">${i.verified ? "Verified." : "Not verified. Optional $10/month certification verification is planned, but not available yet."}</p>`;
   }
   dlg.innerHTML = `<h2 id="dialog-title">Account</h2>${body}<div class="row"><button type="button" class="secondary" data-close>Close</button></div>`;
   $("#phone")?.addEventListener("change", e => attempt(async () => {
@@ -271,14 +271,6 @@ document.addEventListener("click", e => {
     render();
     $("#search").scrollIntoView();
   }
-  if (t.dataset.bill) {
-    attempt(async () => {
-      const body = t.dataset.bill === "portal" ? { action: "portal" } : { action: "checkout", interval: t.dataset.bill };
-      const { data, error } = await sb.functions.invoke("billing", { body });
-      if (error) throw new Error((await error.context?.json?.().catch(() => null))?.error || error.message);
-      location.href = data.url;
-    });
-  }
   if (t.dataset.unlock) {
     if (!me) return showSignup("Sign up for personal or organization use to unlock contacts.");
     attempt(async () => {
@@ -293,6 +285,4 @@ let timer;
 $("#filters").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(render, 150); });
 $("#filters").addEventListener("reset", () => setTimeout(render));
 sb.auth.onAuthStateChange((event) => { if (event === "SIGNED_IN" || event === "SIGNED_OUT") refresh(); });
-const billing = new URLSearchParams(location.search).get("billing");
-if (billing === "success") alert("Thanks! Your plan will update in a moment.");
 refresh();
