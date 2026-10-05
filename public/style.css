@@ -49,6 +49,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .site-header nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
 .site-header nav a { color: var(--ink); text-decoration: none; font-weight: 500; }
 .site-header nav a:hover { color: var(--brand); text-decoration: underline; }
+.site-header nav a.search-tab { padding: 8px 14px; border-radius: 8px 8px 0 0; color: var(--brand-dark); background: var(--accent); box-shadow: inset 0 -3px var(--brand); font-weight: 700; }
 #auth { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
 /* Layout */
