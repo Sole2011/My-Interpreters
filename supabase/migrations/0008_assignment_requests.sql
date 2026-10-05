@@ -110,10 +110,18 @@ begin
   if p_service_mode = 'in-person' and nullif(btrim(p_city), '') is null then
     raise exception 'City is required for in-person assignments';
   end if;
-  if p_scheduled_for <= now() + interval '1 hour' then raise exception 'Choose a time at least one hour from now'; end if;
+  if p_service_mode = 'in-person' and p_scheduled_for <= now() + interval '1 hour' then
+    raise exception 'In-person assignments must start more than one hour from now';
+  end if;
+  if p_service_mode = 'remote' and p_scheduled_for <= now() + interval '4 hours' then
+    raise exception 'Virtual assignments must start more than four hours from now';
+  end if;
   if p_max_hourly_rate is not null and p_max_hourly_rate < 0 then raise exception 'Invalid maximum rate'; end if;
 
-  response_deadline := least(now() + interval '24 hours', p_scheduled_for - interval '1 hour');
+  response_deadline := case p_service_mode
+    when 'in-person' then least(now() + interval '24 hours', p_scheduled_for - interval '1 hour')
+    else least(now() + interval '24 hours', p_scheduled_for - interval '4 hours')
+  end;
   insert into assignments (
     customer_id, requested_interpreter_id, current_interpreter_id, language, specialty,
     city, state, service_mode, scheduled_for, max_hourly_rate, status, current_response_deadline
@@ -180,7 +188,15 @@ begin
     return null;
   end if;
 
-  next_deadline := least(now() + interval '24 hours', a.scheduled_for - interval '1 hour');
+  next_deadline := case a.service_mode
+    when 'in-person' then least(now() + interval '24 hours', a.scheduled_for - interval '1 hour')
+    else least(now() + interval '24 hours', a.scheduled_for - interval '4 hours')
+  end;
+  if next_deadline <= now() then
+    update assignments set status = 'unfilled', current_interpreter_id = null, current_response_deadline = null
+      where id = a.id;
+    return null;
+  end if;
   insert into assignment_offers (assignment_id, interpreter_id, response_deadline)
     values (a.id, next_interpreter, next_deadline);
   update assignments set current_interpreter_id = next_interpreter, current_response_deadline = next_deadline

@@ -103,6 +103,9 @@ section { margin: 48px 0; }
 .assignment-item h3, .assignment-item p { margin: 0 0 4px; }
 .assignment-item .row { margin-top: 0; }
 .assignment-item .row button { flex: 0 1 auto; }
+.location-fields { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+.location-fields[hidden] { display: none; }
+.location-fields legend { padding: 0 6px; font-weight: 700; }
 .message-thread { list-style: none; margin: 0 0 12px; padding: 12px; max-height: min(52vh, 480px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #f4f7fb; border: 1px solid var(--line); border-radius: 12px; }
 .message { width: min(88%, 34rem); padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px 12px 12px 3px; background: #fff; overflow-wrap: anywhere; }
 .message.mine { align-self: flex-end; border-color: #9dbfe0; background: #e8f1fb; border-radius: 12px 12px 3px 12px; }

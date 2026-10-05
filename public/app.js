@@ -149,7 +149,7 @@ async function showAssignments() {
   if (!me) return showLogin();
   await attempt(async () => {
     const rows = check(await sb.from("assignments")
-      .select("id, customer_id, requested_interpreter_id, current_interpreter_id, language, specialty, city, state, service_mode, scheduled_for, status, current_response_deadline, accepted_at")
+      .select("id, customer_id, requested_interpreter_id, current_interpreter_id, language, specialty, city, state, service_mode, scheduled_for, status, current_response_deadline, accepted_at, address, room_number, parking_instructions, transit_stop")
       .order("created_at", { ascending: false }));
     const isInterpreter = me.profile.role === "interpreter";
     const list = rows.length
@@ -158,10 +158,16 @@ async function showAssignments() {
           const status = a.status === "offered"
             ? `Awaiting ${isInterpreter ? "your response" : esc(selected)} until ${esc(new Date(a.current_response_deadline).toLocaleString())}`
             : a.status.charAt(0).toUpperCase() + a.status.slice(1);
+          const locationDetails = [
+            a.address && `Address: ${a.address}`,
+            a.room_number && `Room: ${a.room_number}`,
+            a.parking_instructions && `Parking: ${a.parking_instructions}`,
+            a.transit_stop && `Nearby transit: ${a.transit_stop}`,
+          ].filter(Boolean);
           const actions = isInterpreter && a.status === "offered" && a.current_interpreter_id === me.user.id
             ? `<div class="row"><button type="button" data-assignment-response="${esc(a.id)}" data-accept="true">Accept</button><button type="button" class="secondary" data-assignment-response="${esc(a.id)}" data-accept="false">Decline</button></div>`
             : "";
-          return `<li class="assignment-item"><div><h3>${esc(a.language)} · ${esc(a.specialty)}</h3><p>${esc([a.city, a.state].filter(Boolean).join(", ")) || "Remote"} · ${esc(a.service_mode)} · ${esc(new Date(a.scheduled_for).toLocaleString())}</p><p class="muted">${status}</p></div>${actions}</li>`;
+          return `<li class="assignment-item"><div><h3>${esc(a.language)} · ${esc(a.specialty)}</h3><p>${esc([a.city, a.state].filter(Boolean).join(", ")) || "Remote"} · ${esc(a.service_mode)} · ${esc(new Date(a.scheduled_for).toLocaleString())}</p>${locationDetails.map(detail => `<p>${esc(detail)}</p>`).join("")}<p class="muted">${status}</p></div>${actions}</li>`;
         }).join("")}</ul>`
       : '<p class="empty">No assignments yet. Request one from an interpreter profile.</p>';
     dlg.innerHTML = `<h2 id="dialog-title">Assignments</h2>${list}<div class="row"><button type="button" class="secondary" data-close>Close</button></div>`;
@@ -176,26 +182,48 @@ function showAssignmentForm(interpreterId) {
   if (!interpreter) return;
   const languages = [...new Set(["ASL", "Spanish", ...all.flatMap(i => i.interpreter_languages.map(l => l.language))])].sort();
   const specialties = ["conference", "education", "legal", "medical", "other"];
-  const soon = new Date(Date.now() + 2 * 60 * 60 * 1000);
-  soon.setMinutes(soon.getMinutes() - soon.getTimezoneOffset());
-  const minDate = soon.toISOString().slice(0, 16);
   dlg.innerHTML = `<h2 id="dialog-title">Request ${esc(interpreter.display_name)}</h2>
-    <p class="muted">The interpreter has 24 hours (or until one hour before the assignment) to accept. If they don't, Exponent offers it to the next matching available interpreter.</p>
+    <p class="muted">In-person offers have up to 24 hours to accept. Virtual offers expire after 24 hours or four hours before the assignment, whichever comes first. If the interpreter doesn't accept, Exponent offers it to the next matching available interpreter.</p>
     <form id="assignment-form">
       <label>Language <select name="language" required>${languages.map(language => `<option value="${esc(language)}" ${interpreter.interpreter_languages.some(l => l.language === language) ? "selected" : ""}>${esc(language)}</option>`).join("")}</select></label>
       <label>Specialty <select name="specialty" required>${specialties.map(specialty => `<option value="${specialty}" ${(interpreter.specialties || []).includes(specialty) ? "selected" : ""}>${specialty[0].toUpperCase() + specialty.slice(1)}</option>`).join("")}</select></label>
       <label>Service mode <select name="service_mode"><option value="remote" ${interpreter.remote ? "selected" : ""}>Remote</option><option value="in-person" ${interpreter.in_person ? "selected" : ""}>In person</option></select></label>
-      <label>Assignment city <input name="city" maxlength="100" placeholder="Required for in-person assignments"></label>
-      <label>State <input name="state" maxlength="50"></label>
-      <label>Date and time <input type="datetime-local" name="scheduled_for" min="${minDate}" required></label>
+      <button type="button" class="link" id="toggle-location" hidden aria-expanded="false">Add address and arrival details</button>
+      <fieldset id="location-fields" class="location-fields" hidden><legend>In-person location and arrival details</legend>
+        <label>Street address <input name="address" maxlength="250" autocomplete="street-address"></label>
+        <label>City <input name="city" maxlength="100" autocomplete="address-level2"></label>
+        <label>State <input name="state" maxlength="50" autocomplete="address-level1"></label>
+        <label>Room or suite number <input name="room_number" maxlength="80"></label>
+        <label>Parking instructions <textarea name="parking_instructions" rows="2" maxlength="500"></textarea></label>
+        <label>Nearby public transit stop <input name="transit_stop" maxlength="150" placeholder="Station, stop or route"></label>
+      </fieldset>
+      <label>Date and time <input type="datetime-local" name="scheduled_for" required></label>
       <label>Maximum hourly rate ($, optional) <input name="max_hourly_rate" type="number" min="0" inputmode="decimal"></label>
       <div class="row"><button type="submit">Send assignment request</button><button type="button" class="secondary" data-close>Cancel</button></div>
     </form>`;
   const modeSelect = $("[name=service_mode]");
   const cityInput = $("[name=city]");
-  const updateCityRequirement = () => { cityInput.required = modeSelect.value === "in-person"; };
-  modeSelect.addEventListener("change", updateCityRequirement);
-  updateCityRequirement();
+  const addressInput = $("[name=address]");
+  const locationFields = $("#location-fields");
+  const toggleLocation = $("#toggle-location");
+  const scheduleInput = $("[name=scheduled_for]");
+  const updateModeRequirements = () => {
+    const inPerson = modeSelect.value === "in-person";
+    cityInput.required = inPerson;
+    addressInput.required = inPerson;
+    locationFields.hidden = !inPerson;
+    toggleLocation.hidden = inPerson;
+    toggleLocation.setAttribute("aria-expanded", String(inPerson));
+    const minTime = new Date(Date.now() + (inPerson ? 65 : 245) * 60 * 1000);
+    minTime.setMinutes(minTime.getMinutes() - minTime.getTimezoneOffset());
+    scheduleInput.min = minTime.toISOString().slice(0, 16);
+  };
+  modeSelect.addEventListener("change", updateModeRequirements);
+  toggleLocation.addEventListener("click", () => {
+    locationFields.hidden = !locationFields.hidden;
+    toggleLocation.setAttribute("aria-expanded", String(!locationFields.hidden));
+  });
+  updateModeRequirements();
   $("#assignment-form").onsubmit = async event => {
     event.preventDefault();
     const fields = Object.fromEntries(new FormData(event.currentTarget));
@@ -209,6 +237,10 @@ function showAssignmentForm(interpreterId) {
         p_service_mode: fields.service_mode,
         p_scheduled_for: new Date(fields.scheduled_for).toISOString(),
         p_max_hourly_rate: fields.max_hourly_rate ? Number(fields.max_hourly_rate) : null,
+        p_address: fields.service_mode === "in-person" ? fields.address : null,
+        p_room_number: fields.service_mode === "in-person" ? fields.room_number : null,
+        p_parking_instructions: fields.service_mode === "in-person" ? fields.parking_instructions : null,
+        p_transit_stop: fields.service_mode === "in-person" ? fields.transit_stop : null,
       }));
       await showAssignments();
     });
