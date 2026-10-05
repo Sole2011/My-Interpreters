@@ -109,17 +109,31 @@ function filtered() {
 function render() {
   const list = filtered();
   $("#count").textContent = `${list.length} interpreter${list.length === 1 ? "" : "s"}`;
+  if (!list.length) {
+    $("#results").innerHTML = '<p class="empty">No interpreters match these filters. Try removing a filter or <button type="button" class="link" id="clear-filters">clear all filters</button>.</p>';
+    return;
+  }
   $("#results").innerHTML = list.map(i => {
     const c = contacts.get(i.id);
     const modes = [i.remote && "remote", i.in_person && "in-person"].filter(Boolean).join(" / ");
+    const initials = (i.display_name || "?").split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
+    const place = [i.city, i.state].filter(Boolean).join(", ");
     return `
     <article class="card ${i.featured ? "featured" : ""}" aria-labelledby="interpreter-${esc(i.id)}-name">
-      <h3 id="interpreter-${esc(i.id)}-name">${esc(i.display_name)}
+      <div class="card-head">
+        <span class="avatar" aria-hidden="true">${esc(initials)}</span>
+        <div>
+          <h3 id="interpreter-${esc(i.id)}-name">${esc(i.display_name)}</h3>
+          <p class="muted">${esc(place) || "Location not listed"}${modes ? " · " + esc(modes) : ""}</p>
+        </div>
+        <p class="rate">${i.hourly_rate != null ? "$" + esc(i.hourly_rate) + "<small>/hr</small>" : "<small>Rate on request</small>"}</p>
+      </div>
+      <p class="badges">
         ${i.verified ? '<span class="badge ok">Verified</span>' : ""}
-        ${i.featured ? '<span class="badge feat">Featured</span>' : ""}</h3>
-      <div>${i.interpreter_languages.map(l => `<span class="tag">${esc(l.language)}</span>`).join("")}</div>
-      <div>${(i.specialties || []).map(s => `<span class="tag">${esc(s)}</span>`).join("")}</div>
-      <p class="muted">${esc([i.city, i.state].filter(Boolean).join(", "))} · ${modes} · ${i.hourly_rate != null ? "$" + esc(i.hourly_rate) + "/hr" : "rate on request"} · ${i.available ? "Available" : "Unavailable"}</p>
+        ${i.featured ? '<span class="badge feat">Featured</span>' : ""}
+        <span class="badge ${i.available ? "avail" : "busy"}">${i.available ? "Available" : "Unavailable"}</span>
+      </p>
+      <div>${i.interpreter_languages.map(l => `<span class="tag">${esc(l.language)}</span>`).join("")}${(i.specialties || []).map(s => `<span class="tag alt">${esc(s)}</span>`).join("")}</div>
       ${i.certifications.length ? `<p class="muted">Certifications: ${i.certifications.map(x => `${esc(x.name)}${x.scope ? ` (${esc(x.scope.charAt(0).toUpperCase() + x.scope.slice(1))})` : ""}`).join(", ")}</p>` : ""}
       ${c
         ? `<div class="locked">Email: ${esc(c.email)}<br>Phone: ${esc(c.phone || "not provided")}</div>`
@@ -252,6 +266,14 @@ document.addEventListener("click", e => {
   const t = e.target;
   if (t.dataset.close !== undefined) dlg.close();
   if (t.id === "retry-search") refresh();
+  if (t.id === "clear-filters") { $("#filters").reset(); render(); }
+  if (t.dataset.openSignup !== undefined) showSignup();
+  if (t.dataset.quickLanguage) {
+    $("#filters").reset();
+    $("[name=language]").value = t.dataset.quickLanguage;
+    render();
+    $("#search").scrollIntoView();
+  }
   if (t.dataset.bill) {
     attempt(async () => {
       const body = t.dataset.bill === "portal" ? { action: "portal" } : { action: "checkout", interval: t.dataset.bill };
@@ -272,6 +294,7 @@ document.addEventListener("click", e => {
 initAccessibility();
 let timer;
 $("#filters").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(render, 150); });
+$("#filters").addEventListener("reset", () => setTimeout(render));
 sb.auth.onAuthStateChange((event) => { if (event === "SIGNED_IN" || event === "SIGNED_OUT") refresh(); });
 const billing = new URLSearchParams(location.search).get("billing");
 if (billing === "success") alert("Thanks! Your plan will update in a moment.");
