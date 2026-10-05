@@ -95,6 +95,16 @@ section { margin: 48px 0; }
 .locked { background: #f1f4f8; border: 1px solid var(--line); padding: 10px 12px; border-radius: 10px; margin-top: 10px; overflow-wrap: anywhere; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .row button { flex: 1 1 auto; }
+.conversation-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.conversation-link { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; color: var(--ink); background: #fff; border: 1px solid var(--line); }
+.conversation-link:hover { background: var(--accent); }
+.conversation-link small { color: var(--muted); font-weight: 400; }
+.message-thread { list-style: none; margin: 0 0 12px; padding: 12px; max-height: min(52vh, 480px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #f4f7fb; border: 1px solid var(--line); border-radius: 12px; }
+.message { width: min(88%, 34rem); padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px 12px 12px 3px; background: #fff; overflow-wrap: anywhere; }
+.message.mine { align-self: flex-end; border-color: #9dbfe0; background: #e8f1fb; border-radius: 12px 12px 3px 12px; }
+.message-meta, .message-body { margin: 0; }
+.message-meta { margin-bottom: 4px; color: var(--muted); font-size: .78rem; }
+.message-body { white-space: pre-wrap; }
 
 /* How it works */
 .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
@@ -128,6 +138,7 @@ dialog input:not([type="checkbox"]), dialog select, dialog textarea { width: 100
 .high-contrast .hero { background: #000; }
 .high-contrast .toolbar { background: #000; }
 .high-contrast .card, .high-contrast .locked, .high-contrast #filters, .high-contrast .steps li { border: 2px solid #000; box-shadow: none; }
+.high-contrast .conversation-link, .high-contrast .message, .high-contrast .message-thread { color: #000; background: #fff; border: 2px solid #000; }
 .high-contrast .tag, .high-contrast .badge, .high-contrast .avatar { background: #fff; color: #000; border: 1px solid #000; }
 .high-contrast button, .high-contrast .btn { border: 2px solid #000; }
 .high-contrast .hero .btn, .high-contrast .hero .chip { border-color: #fff; }

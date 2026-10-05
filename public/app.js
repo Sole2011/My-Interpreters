@@ -32,7 +32,6 @@ function initAccessibility() {
 
 let me = null; // { user, profile, interpreter?, usage? }
 let all = [];
-let contacts = new Map(); // interpreter id -> { email, phone }
 
 async function loadMe() {
   const { data: { session } } = await sb.auth.getSession();
@@ -41,7 +40,6 @@ async function loadMe() {
   me = { user: session.user, profile };
   if (profile?.role === "interpreter") {
     me.interpreter = check(await sb.from("interpreters").select("*").eq("id", session.user.id).maybeSingle());
-    me.unlockCount = check(await sb.rpc("my_unlock_count"));
   }
 }
 
@@ -49,11 +47,12 @@ function renderAuth() {
   const p = me?.profile;
   const accountLabel = p?.role === "interpreter" ? "interpreter" : `${p?.role === "personal" ? "personal" : "organization"}: ${esc(p?.plan)}`;
   $("#auth").innerHTML = me
-    ? `${esc(p?.full_name || me.user.email)} (${accountLabel}) <button type="button" class="secondary" id="me">Account</button> <button type="button" class="secondary" id="out">Log out</button>`
+    ? `${esc(p?.full_name || me.user.email)} (${accountLabel}) <button type="button" class="secondary" id="messages">Messages</button> <button type="button" class="secondary" id="me">Account</button> <button type="button" class="secondary" id="out">Log out</button>`
     : `<button type="button" class="secondary" id="in">Log in</button> <button type="button" id="up">Sign up</button>`;
   $("#in")?.addEventListener("click", showLogin);
   $("#up")?.addEventListener("click", () => showSignup());
   $("#out")?.addEventListener("click", async () => { await sb.auth.signOut(); await refresh(); });
+  $("#messages")?.addEventListener("click", showInbox);
   $("#me")?.addEventListener("click", showAccount);
 }
 
@@ -61,15 +60,6 @@ async function loadInterpreters() {
   const data = check(await sb.from("interpreters")
     .select("id, display_name, city, state, remote, in_person, hourly_rate, specialties, verified, featured, available, interpreter_languages(language), certifications(name,scope)"));
   all = data;
-  contacts = new Map();
-  if (["organization", "personal"].includes(me?.profile?.role)) {
-    const ids = check(await sb.from("unlocks").select("interpreter_id")).map(r => r.interpreter_id);
-    // Re-calling for an already unlocked contact does not use up a unlock.
-    await Promise.all(ids.map(async id => {
-      const rows = check(await sb.rpc("unlock_contact", { p_interpreter_id: id }));
-      if (rows?.[0]) contacts.set(id, rows[0]);
-    }));
-  }
 }
 
 function fillFacets() {
@@ -114,11 +104,10 @@ function render() {
     return;
   }
   $("#results").innerHTML = list.map(i => {
-    const c = contacts.get(i.id);
     const modes = [i.remote && "remote", i.in_person && "in-person"].filter(Boolean).join(" / ");
     const initials = (i.display_name || "?").split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
     const place = [i.city, i.state].filter(Boolean).join(", ");
-    const customerCanUnlock = ["organization", "personal"].includes(me?.profile?.role) && me.profile.plan !== "free";
+    const canMessage = me?.profile?.role !== "interpreter";
     return `
     <article class="card ${i.featured ? "featured" : ""}" aria-labelledby="interpreter-${esc(i.id)}-name">
       <div class="card-head">
@@ -135,9 +124,8 @@ function render() {
       </p>
       <div>${i.interpreter_languages.map(l => `<span class="tag">${esc(l.language)}</span>`).join("")}${(i.specialties || []).map(s => `<span class="tag alt">${esc(s)}</span>`).join("")}</div>
       ${i.certifications.length ? `<p class="muted">Certifications: ${i.certifications.map(x => `${esc(x.name)}${x.scope ? ` (${esc(x.scope.charAt(0).toUpperCase() + x.scope.slice(1))})` : ""}`).join(", ")}</p>` : ""}
-      ${c
-        ? `<div class="locked">Email: ${esc(c.email)}<br>Phone: ${esc(c.phone || "not provided")}</div>`
-        : `<div class="locked">Email and phone hidden</div>${customerCanUnlock ? `<div class="row"><button type="button" data-unlock="${esc(i.id)}" aria-label="Unlock contact for ${esc(i.display_name)}">Unlock contact</button></div>` : '<p class="muted">Contact unlocking will open as the free directory grows.</p>'}`}
+      <div class="locked">Email and phone are private. Message through Exponent.</div>
+      ${canMessage ? `<div class="row"><button type="button" data-message-to="${esc(i.id)}" aria-label="Message ${esc(i.display_name)}">Message interpreter</button></div>` : ""}
       </article>`;
   }).join("");
 }
@@ -154,6 +142,80 @@ async function refresh() {
     $("#count").textContent = "Interpreter search is currently unavailable.";
     $("#results").innerHTML = '<button type="button" id="retry-search">Try again</button>';
   }
+}
+
+async function showInbox() {
+  if (!me) return showLogin();
+  await attempt(async () => {
+    const rows = check(await sb.from("conversations")
+      .select("id, customer_id, interpreter_id, customer_label, updated_at")
+      .order("updated_at", { ascending: false }));
+    const list = rows.length
+      ? `<ul class="conversation-list">${rows.map(c => {
+          const title = me.profile.role === "interpreter"
+            ? c.customer_label
+            : all.find(i => i.id === c.interpreter_id)?.display_name || "Interpreter";
+          return `<li><button type="button" class="conversation-link" data-thread="${esc(c.id)}">${esc(title)}<small>${esc(new Date(c.updated_at).toLocaleString())}</small></button></li>`;
+        }).join("")}</ul>`
+      : '<p class="empty">No messages yet. Start a conversation from an interpreter profile.</p>';
+    dlg.innerHTML = `<h2 id="dialog-title">Messages</h2>${list}<div class="row"><button type="button" class="secondary" data-close>Close</button></div>`;
+    if (!dlg.open) dlg.showModal();
+  });
+}
+
+async function showThread(conversationId) {
+  await attempt(async () => {
+    const conversation = check(await sb.from("conversations")
+      .select("id, customer_id, interpreter_id, customer_label")
+      .eq("id", conversationId).single());
+    const messages = check(await sb.from("messages")
+      .select("id, sender_id, body, created_at")
+      .eq("conversation_id", conversationId).order("created_at"));
+    const interpreterName = all.find(i => i.id === conversation.interpreter_id)?.display_name || "Interpreter";
+    const title = me.profile.role === "interpreter" ? conversation.customer_label : interpreterName;
+    const thread = messages.length
+      ? messages.map(message => `<li class="message ${message.sender_id === me.user.id ? "mine" : ""}">
+          <p class="message-meta">${message.sender_id === me.user.id ? "You" : esc(title)} · <time datetime="${esc(message.created_at)}">${esc(new Date(message.created_at).toLocaleString())}</time></p>
+          <p class="message-body">${esc(message.body)}</p>
+        </li>`).join("")
+      : '<li class="empty">No messages yet.</li>';
+    dlg.innerHTML = `<h2 id="dialog-title">${esc(title)}</h2>
+      <ol class="message-thread" aria-label="Conversation with ${esc(title)}" aria-live="polite">${thread}</ol>
+      <p class="muted">Your email and phone stay private. Please keep contact details out of messages.</p>
+      <form id="reply-form"><label>Message <textarea name="body" rows="3" maxlength="4000" required></textarea></label>
+        <div class="row"><button type="submit">Send message</button><button type="button" class="secondary" data-back-inbox>Back to messages</button></div></form>`;
+    $("#reply-form").onsubmit = async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const body = new FormData(form).get("body");
+      await attempt(async () => {
+        check(await sb.rpc("send_message", { p_conversation_id: conversationId, p_body: body }));
+        await showThread(conversationId);
+      });
+    };
+    if (!dlg.open) dlg.showModal();
+    $(".message-thread").scrollTop = $(".message-thread").scrollHeight;
+  });
+}
+
+function showMessageForm(interpreterId) {
+  if (!me) return showSignup("Create a free personal or organization account to message interpreters.");
+  if (me.profile.role === "interpreter") return showInbox();
+  const interpreter = all.find(i => i.id === interpreterId);
+  if (!interpreter) return;
+  dlg.innerHTML = `<h2 id="dialog-title">Message ${esc(interpreter.display_name)}</h2>
+    <p class="muted">Your email and phone stay private. Please keep contact details out of messages.</p>
+    <form id="first-message-form"><label>Message <textarea name="body" rows="4" maxlength="4000" required></textarea></label>
+      <div class="row"><button type="submit">Send message</button><button type="button" class="secondary" data-close>Cancel</button></div></form>`;
+  $("#first-message-form").onsubmit = async event => {
+    event.preventDefault();
+    const body = new FormData(event.currentTarget).get("body");
+    await attempt(async () => {
+      const conversationId = check(await sb.rpc("start_conversation", { p_interpreter_id: interpreterId, p_body: body }));
+      await showThread(conversationId);
+    });
+  };
+  if (!dlg.open) dlg.showModal();
 }
 
 function showSignup(note) {
@@ -240,8 +302,8 @@ function showAccount() {
       <p class="muted">Customer subscriptions are paused while the directory grows. Contact unlocking will open later.</p>`;
   } else {
     const i = me.interpreter;
-    body += `<p>Contacts unlocked by organizations: <b>${esc(me.unlockCount)}</b></p>
-      <label>Phone (shown to unlocking orgs) <input id="phone" value="${esc(me.user.user_metadata?.phone)}" maxlength="40"></label>
+    body += `<p>Your conversations are in Messages. Your contact details stay private.</p>
+      <label>Phone (private) <input id="phone" value="${esc(me.user.user_metadata?.phone)}" maxlength="40"></label>
       <label><input type="checkbox" id="avail" ${i.available ? "checked" : ""}> Available</label>
       <p class="muted">${i.verified ? "Verified." : "Not verified. Optional $10/month certification verification is planned, but not available yet."}</p>`;
   }
@@ -260,7 +322,7 @@ function showAccount() {
 }
 
 document.addEventListener("click", e => {
-  const t = e.target;
+  const t = e.target.closest("button") || e.target;
   if (t.dataset.close !== undefined) dlg.close();
   if (t.id === "retry-search") refresh();
   if (t.id === "clear-filters") { $("#filters").reset(); render(); }
@@ -271,13 +333,9 @@ document.addEventListener("click", e => {
     render();
     $("#search").scrollIntoView();
   }
-  if (t.dataset.unlock) {
-    if (!me) return showSignup("Sign up for personal or organization use to unlock contacts.");
-    attempt(async () => {
-      check(await sb.rpc("unlock_contact", { p_interpreter_id: t.dataset.unlock }));
-      await refresh();
-    });
-  }
+  if (t.dataset.messageTo) showMessageForm(t.dataset.messageTo);
+  if (t.dataset.thread) showThread(t.dataset.thread);
+  if (t.dataset.backInbox !== undefined) showInbox();
 });
 
 initAccessibility();
