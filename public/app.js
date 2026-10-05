@@ -67,13 +67,12 @@ function fillFacets() {
   const langs = [...new Set(["ASL", "Spanish", ...all.flatMap(i => i.interpreter_languages.map(l => l.language))])].sort();
   const specs = [...new Set(["conference", "education", "legal", "medical", "other", ...all.flatMap(i => i.specialties || []).map(s => s.toLowerCase())])].sort();
   const certs = [...new Set(["CCHI", "NBCMI", "Court certified", ...all.flatMap(i => (i.certifications || []).map(c => c.name)).filter(Boolean)])].sort();
-  const scopes = ["international", "local", "national", "state"];
-  for (const [name, vals] of [["language", langs], ["specialty", specs], ["certification", certs], ["certification_scope", scopes]]) {
+  for (const [name, vals] of [["language", langs], ["specialty", specs], ["certification", certs]]) {
     const sel = document.querySelector(`[name=${name}]`);
     const cur = sel.value;
     sel.length = 1;
     vals.forEach(v => {
-      const label = ["specialty", "certification_scope"].includes(name) ? v.charAt(0).toUpperCase() + v.slice(1) : v;
+      const label = name === "specialty" ? v.charAt(0).toUpperCase() + v.slice(1) : v;
       sel.add(new Option(label, v));
     });
     sel.value = cur;
@@ -81,7 +80,9 @@ function fillFacets() {
 }
 
 function filtered() {
-  const f = Object.fromEntries(new FormData($("#filters")));
+  const formData = new FormData($("#filters"));
+  const f = Object.fromEntries(formData);
+  const selectedScopes = formData.getAll("certification_scope");
   const q = (f.q || "").toLowerCase();
   return all
     .filter(i =>
@@ -89,7 +90,7 @@ function filtered() {
       (!f.language || i.interpreter_languages.some(l => l.language === f.language)) &&
       (!f.specialty || (i.specialties || []).includes(f.specialty)) &&
       (!f.certification || (i.certifications || []).some(c => c.name === f.certification)) &&
-      (!f.certification_scope || (i.certifications || []).some(c => c.scope === f.certification_scope)) &&
+      (!selectedScopes.length || (i.certifications || []).some(c => selectedScopes.includes(c.scope))) &&
       (!f.mode || (f.mode === "remote" ? i.remote : i.in_person)) &&
       (!f.maxRate || Number(i.hourly_rate) <= +f.maxRate) &&
       (!f.verified || i.verified) &&
@@ -341,15 +342,12 @@ function showSignup(note) {
       ? `<label>Languages (comma separated) <input name="languages" placeholder="ASL, Spanish" required></label>
          <label>Specialties (comma separated) <input name="specialties" placeholder="conference, legal, medical, education, other"></label>
         <label>Certifications (comma separated) <input name="certs" placeholder="CCHI, NBCMI, Court certified"></label>
-         <label>Scope for these certifications
-           <select name="certification_scope">
-             <option value="">Choose a scope</option>
-             <option value="national">National</option>
-             <option value="international">International</option>
-             <option value="state">State</option>
-             <option value="local">Local</option>
-           </select>
-         </label>
+         <fieldset class="filter-checks"><legend>Certification scope (select all that apply)</legend>
+           <label class="check"><input type="checkbox" name="certification_scopes" value="national"> National</label>
+           <label class="check"><input type="checkbox" name="certification_scopes" value="international"> International</label>
+           <label class="check"><input type="checkbox" name="certification_scopes" value="state"> State</label>
+           <label class="check"><input type="checkbox" name="certification_scopes" value="local"> Local</label>
+         </fieldset>
          <label>City <input name="city" required></label>
          <label>State <input name="state"></label>
          <label>Phone (shown only to organizations that unlock you) <input name="phone"></label>
@@ -361,12 +359,13 @@ function showSignup(note) {
   form.role.onchange = draw; draw();
   form.onsubmit = async e => {
     e.preventDefault();
-    const f = Object.fromEntries(new FormData(form));
+    const formData = new FormData(form);
+    const f = Object.fromEntries(formData);
     const data = { role: f.role, full_name: f.full_name };
     if (f.role === "organization") data.org_name = f.org_name;
     else if (f.role === "interpreter") Object.assign(data, {
       languages: split(f.languages), specialties: split(f.specialties).map(s => s.toLowerCase()), certs: split(f.certs),
-      certification_scope: f.certification_scope,
+      certification_scopes: formData.getAll("certification_scopes"),
       city: f.city, state: f.state, phone: f.phone, hourly_rate: +f.rate, remote: !!f.remote, in_person: !!f.in_person,
     });
     await attempt(async () => {

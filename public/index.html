@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Exponent | Find ASL and Spanish interpreters</title>
 <meta name="description" content="Find verified ASL, Spanish and other interpreters for medical, legal, conference and education settings.">
-<link rel="stylesheet" href="style.css?v=assignment-location-1">
+<link rel="stylesheet" href="style.css?v=scope-checkbox-1">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to main content</a>
@@ -84,15 +84,12 @@
               <option value="Court certified">Court certified</option>
             </select>
           </label>
-          <label class="field">Certification scope
-            <select name="certification_scope">
-              <option value="">Any scope</option>
-              <option value="national">National</option>
-              <option value="international">International</option>
-              <option value="state">State</option>
-              <option value="local">Local</option>
-            </select>
-          </label>
+          <fieldset class="filter-checks"><legend>Certification scope</legend>
+            <label class="check"><input type="checkbox" name="certification_scope" value="national"> National</label>
+            <label class="check"><input type="checkbox" name="certification_scope" value="international"> International</label>
+            <label class="check"><input type="checkbox" name="certification_scope" value="state"> State</label>
+            <label class="check"><input type="checkbox" name="certification_scope" value="local"> Local</label>
+          </fieldset>
           <label class="field">Maximum hourly rate ($)
             <input name="maxRate" type="number" min="0" inputmode="decimal">
           </label>
@@ -124,6 +121,6 @@
 <dialog id="dlg" aria-labelledby="dialog-title"></dialog>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
-<script src="app.js?v=assignment-location-1"></script>
+<script src="app.js?v=scope-checkbox-2"></script>
 </body>
 </html>

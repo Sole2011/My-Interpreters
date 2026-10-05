@@ -63,6 +63,9 @@ section { margin: 48px 0; }
 /* Search */
 #filters { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; display: grid; gap: 12px; }
 .filters-main, .filters-more { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; align-items: end; }
+.filter-checks { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.filter-checks legend { width: 100%; margin-bottom: 2px; font-weight: 600; }
+.filter-checks .check { min-height: 36px; }
 .field { display: grid; gap: 4px; font-weight: 600; font-size: .95rem; }
 .field input, .field select { font-weight: 400; width: 100%; height: 48px; }
 .check { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
@@ -106,6 +109,7 @@ section { margin: 48px 0; }
 .location-fields { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
 .location-fields[hidden] { display: none; }
 .location-fields legend { padding: 0 6px; font-weight: 700; }
+dialog .filter-checks { display: grid; gap: 4px 12px; }
 .message-thread { list-style: none; margin: 0 0 12px; padding: 12px; max-height: min(52vh, 480px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #f4f7fb; border: 1px solid var(--line); border-radius: 12px; }
 .message { width: min(88%, 34rem); padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px 12px 12px 3px; background: #fff; overflow-wrap: anywhere; }
 .message.mine { align-self: flex-end; border-color: #9dbfe0; background: #e8f1fb; border-radius: 12px 12px 3px 12px; }
