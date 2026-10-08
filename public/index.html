@@ -3,58 +3,65 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Exponent | Find ASL and Spanish interpreters</title>
-<meta name="description" content="Find verified ASL, Spanish and other interpreters for medical, legal, conference and education settings.">
-<link rel="stylesheet" href="style.css?v=consent-notices-1">
+<title>Exponent | Find an interpreter</title>
+<meta name="description" content="Find an interpreter by language and location. Search by city, state, address, or ZIP code.">
+<link rel="stylesheet" href="style.css?v=more-filters-only-11">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to main content</a>
 
-<div class="toolbar" role="group" aria-label="Display settings">
-  <span>Display:</span>
-  <button type="button" class="chip" id="text-smaller" aria-label="Decrease text size">A-</button>
-  <button type="button" class="chip" id="text-larger" aria-label="Increase text size">A+</button>
-  <button type="button" class="chip" id="text-reset">Reset text size</button>
-  <button type="button" class="chip" id="contrast-toggle" aria-pressed="false">High contrast</button>
-</div>
-
 <header class="site-header">
   <a class="brand" href="#top" aria-label="Exponent, home"><span class="brand-mark" aria-hidden="true">E</span> Exponent</a>
-  <nav aria-label="Primary navigation">
-    <a class="search-tab" href="#search" aria-current="location">Search</a>
-    <a href="#how">How it works</a>
-    <span id="auth"></span>
-  </nav>
+  <nav aria-label="Account navigation"><span id="auth"></span></nav>
 </header>
 
 <main id="main" tabindex="-1">
   <section class="hero" id="top" aria-labelledby="hero-title">
-    <h1 id="hero-title">Find the right interpreter, fast with Exponent.</h1>
-    <p class="lead">Join today to find your interpreter. Explore specialists in Conference, Legal, Medical, Education and Other fields.</p>
-    <div class="hero-actions">
-      <a class="btn" href="#search">Find interpreters</a>
-      <button type="button" class="btn ghost" data-open-signup>Join today</button>
+    <div class="hero-heading">
+      <h1 id="hero-title">Find interpreter</h1>
+      <details class="more-filters headline-more-filters">
+        <summary>More filters</summary>
+        <div class="filters-more">
+          <label class="field">Certification
+            <select name="certification" form="filters">
+              <option value="">Any certification</option>
+              <option value="CCHI">CCHI</option>
+              <option value="NBCMI">NBCMI</option>
+              <option value="Court certified">Court certified</option>
+            </select>
+          </label>
+          <fieldset class="filter-checks"><legend>Scope of interpretation</legend>
+            <label class="check"><input type="checkbox" name="certification_scope" value="national" form="filters"> National</label>
+            <label class="check"><input type="checkbox" name="certification_scope" value="international" form="filters"> International</label>
+            <label class="check"><input type="checkbox" name="certification_scope" value="state" form="filters"> State</label>
+            <label class="check"><input type="checkbox" name="certification_scope" value="local" form="filters"> Local</label>
+          </fieldset>
+          <label class="field">Maximum hourly rate ($)
+            <input name="maxRate" type="number" min="0" inputmode="decimal" form="filters">
+          </label>
+          <label class="check"><input type="checkbox" name="verified" form="filters"> Verified interpreter only</label>
+          <label class="check"><input type="checkbox" name="available" form="filters"> Available now</label>
+        </div>
+      </details>
     </div>
-    <p class="quick">Popular:
-      <button type="button" class="chip" data-quick-language="ASL">ASL</button>
-      <button type="button" class="chip" data-quick-language="Spanish">Spanish</button>
-    </p>
-  </section>
-
-  <section id="search" aria-labelledby="search-title">
-    <h2 id="search-title">Find an interpreter</h2>
+    <button type="button" id="start-search" class="search-launch" aria-label="Start searching for an interpreter">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"></circle><path d="m16 16 5 5"></path></svg>
+    </button>
+    <div id="search" class="search-engine" aria-label="Interpreter search" hidden>
     <form id="filters" aria-label="Interpreter search filters">
-      <div class="filters-main">
-        <label class="field grow">Name or city
-          <input name="q" type="search" autocomplete="off" placeholder="e.g. Houston">
-        </label>
-        <label class="field">Language
-          <select name="language">
-            <option value="">Any language</option>
-            <option value="ASL">ASL</option>
-            <option value="Spanish">Spanish</option>
+      <div class="search-primary">
+        <div class="icon-field">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"></path></svg>
+          <select id="filter-language" name="language" aria-label="Language" required>
+            <option value="" selected disabled>Choose language</option>
           </select>
-        </label>
+        </div>
+        <div class="icon-field">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>
+          <input id="filter-location" name="q" type="search" aria-label="Location" autocomplete="street-address" placeholder="City, state, or ZIP code" required>
+        </div>
+      </div>
+      <div class="filters-main">
         <label class="field">Specialty
           <select name="specialty">
             <option value="">Any specialty</option>
@@ -73,54 +80,20 @@
           </select>
         </label>
       </div>
-      <details class="more-filters">
-        <summary>More filters</summary>
-        <div class="filters-more">
-          <label class="field">Certification
-            <select name="certification">
-              <option value="">Any certification</option>
-              <option value="CCHI">CCHI</option>
-              <option value="NBCMI">NBCMI</option>
-              <option value="Court certified">Court certified</option>
-            </select>
-          </label>
-          <fieldset class="filter-checks"><legend>Scope of interpretation</legend>
-            <label class="check"><input type="checkbox" name="certification_scope" value="national"> National</label>
-            <label class="check"><input type="checkbox" name="certification_scope" value="international"> International</label>
-            <label class="check"><input type="checkbox" name="certification_scope" value="state"> State</label>
-            <label class="check"><input type="checkbox" name="certification_scope" value="local"> Local</label>
-          </fieldset>
-          <label class="field">Maximum hourly rate ($)
-            <input name="maxRate" type="number" min="0" inputmode="decimal">
-          </label>
-          <label class="check"><input type="checkbox" name="verified"> Verified interpreter only</label>
-          <label class="check"><input type="checkbox" name="available"> Available now</label>
-        </div>
-      </details>
-      <button type="reset" class="link" id="reset-filters">Clear filters</button>
+      <button type="submit" class="search-submit">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"></circle><path d="m16 16 5 5"></path></svg>
+        Find interpreters
+      </button>
     </form>
     <p id="count" role="status" aria-live="polite" aria-atomic="true"></p>
     <div id="results" aria-label="Interpreter listings"></div>
+    </div>
   </section>
-
-  <section id="how" aria-labelledby="how-title">
-    <h2 id="how-title">How it works</h2>
-    <ol class="steps">
-      <li><span class="step-num" aria-hidden="true">1</span><h3>Search</h3><p>Filter by language, specialty, certification and location.</p></li>
-      <li><span class="step-num" aria-hidden="true">2</span><h3>Compare</h3><p>See rates, availability and verified credentials side by side.</p></li>
-      <li><span class="step-num" aria-hidden="true">3</span><h3>Request an interpreter assignment today</h3><p>Choose in-person or virtual service. If your selected interpreter doesn't respond in time, Exponent offers it to the next matching available interpreter.</p></li>
-    </ol>
-  </section>
-
 </main>
-
-<footer class="site-footer">
-  <p>Exponent. Search interpreters and message privately.</p>
-</footer>
 
 <dialog id="dlg" aria-labelledby="dialog-title"></dialog>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
-<script src="app.js?v=consent-notices-2"></script>
+<script src="app.js?v=more-filters-only-11"></script>
 </body>
 </html>

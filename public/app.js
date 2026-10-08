@@ -8,37 +8,8 @@ const attempt = async fn => { try { return await fn(); } catch (e) { alert(e.mes
 const check = ({ data, error }) => { if (error) throw error; return data; };
 const POLICY_VERSIONS = { terms: "1.0", privacy: "1.0", rules: "1.0" };
 
-function initAccessibility() {
-  let preferences = {};
-  try { preferences = JSON.parse(localStorage.getItem("displayPreferences") || "{}"); } catch {}
-  const sizes = ["normal", "large", "larger"];
-  let sizeIndex = Math.max(0, sizes.indexOf(preferences.textSize));
-  let highContrast = preferences.highContrast === true;
-  const smaller = $("#text-smaller");
-  const larger = $("#text-larger");
-  const contrast = $("#contrast-toggle");
-  const apply = () => {
-    document.documentElement.dataset.textSize = sizes[sizeIndex];
-    document.body.classList.toggle("high-contrast", highContrast);
-    smaller.disabled = sizeIndex === 0;
-    larger.disabled = sizeIndex === sizes.length - 1;
-    contrast.setAttribute("aria-pressed", String(highContrast));
-    try { localStorage.setItem("displayPreferences", JSON.stringify({ textSize: sizes[sizeIndex], highContrast })); } catch {}
-  };
-  smaller.addEventListener("click", () => { sizeIndex = Math.max(0, sizeIndex - 1); apply(); });
-  larger.addEventListener("click", () => { sizeIndex = Math.min(sizes.length - 1, sizeIndex + 1); apply(); });
-  $("#text-reset").addEventListener("click", () => { sizeIndex = 0; apply(); });
-  contrast.addEventListener("click", () => { highContrast = !highContrast; apply(); });
-  apply();
-}
-
 let me = null; // { user, profile, interpreter?, usage? }
 let all = [];
-const PREVIEW_INTERPRETERS = [
-  { id: "preview-asl-medical", display_name: "Sample ASL Interpreter", city: "Example City", state: "CA", remote: true, in_person: true, hourly_rate: 65, specialties: ["medical"], verified: false, featured: false, available: true, interpreter_languages: [{ language: "ASL" }], certifications: [], demo: true },
-  { id: "preview-spanish-legal", display_name: "Sample Spanish Interpreter", city: "Example City", state: "NY", remote: true, in_person: true, hourly_rate: 55, specialties: ["legal"], verified: false, featured: false, available: true, interpreter_languages: [{ language: "Spanish" }], certifications: [], demo: true },
-  { id: "preview-education", display_name: "Sample Education Interpreter", city: "Example City", state: "TX", remote: true, in_person: false, hourly_rate: 50, specialties: ["education", "conference"], verified: false, featured: false, available: true, interpreter_languages: [{ language: "ASL" }, { language: "Spanish" }], certifications: [], demo: true },
-];
 
 async function loadMe() {
   const { data: { session } } = await sb.auth.getSession();
@@ -51,10 +22,6 @@ async function loadMe() {
 }
 
 function renderAuth() {
-  if (isPreviewMode()) {
-    $("#auth").innerHTML = '<span class="preview-note">Preview mode</span>';
-    return;
-  }
   const p = me?.profile;
   const accountLabel = p?.role === "interpreter" ? "interpreter" : `${p?.role === "personal" ? "personal" : "organization"}: ${esc(p?.plan)}`;
   $("#auth").innerHTML = me
@@ -71,7 +38,7 @@ function renderAuth() {
 
 async function loadInterpreters() {
   const data = check(await sb.from("interpreters")
-    .select("id, display_name, city, state, remote, in_person, hourly_rate, specialties, verified, featured, available, interpreter_languages(language), certifications(name,scope)"));
+    .select("id, display_name, city, state, postal_code, remote, in_person, hourly_rate, specialties, verified, featured, available, interpreter_languages(language), certifications(name,scope)"));
   all = data;
 }
 
@@ -89,6 +56,30 @@ function fillFacets() {
     });
     sel.value = cur;
   }
+  const languageSelect = $("#filter-language");
+  const selectedLanguage = languageSelect.value;
+  languageSelect.length = 1;
+  for (const language of langs) languageSelect.add(new Option(language, language));
+  languageSelect.value = selectedLanguage;
+}
+
+function matchesLocation(interpreter, query) {
+  if (!query) return true;
+  const place = [interpreter.city, interpreter.state, interpreter.postal_code]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (place.includes(query)) return true;
+
+  const values = [interpreter.city, interpreter.state, interpreter.postal_code]
+    .filter(Boolean)
+    .map(value => value.toLowerCase());
+  const parts = query.split(/[,;]/).map(part => part.trim()).filter(Boolean);
+  if (parts.some(part => values.some(value => value.includes(part) || part.includes(value)))) return true;
+
+  const terms = query.split(/[\s,;]+/).filter(term => term.length >= 2);
+  return terms.some(term => values.some(value =>
+    term.length === 2 ? value === term : value.includes(term)));
 }
 
 function filtered() {
@@ -98,7 +89,7 @@ function filtered() {
   const q = (f.q || "").toLowerCase();
   return all
     .filter(i =>
-      (!q || (i.display_name || "").toLowerCase().includes(q) || `${i.city} ${i.state}`.toLowerCase().includes(q)) &&
+      (!q || (i.display_name || "").toLowerCase().includes(q) || matchesLocation(i, q)) &&
       (!f.language || i.interpreter_languages.some(l => l.language === f.language)) &&
       (!f.specialty || (i.specialties || []).includes(f.specialty)) &&
       (!f.certification || (i.certifications || []).some(c => c.name === f.certification)) &&
@@ -110,9 +101,29 @@ function filtered() {
     .sort((a, b) => b.featured - a.featured || b.verified - a.verified || (a.hourly_rate ?? 1e9) - (b.hourly_rate ?? 1e9));
 }
 
+function clearFilters() {
+  const form = $("#filters");
+  for (const control of form.elements) {
+    if (control instanceof HTMLInputElement && ["checkbox", "radio"].includes(control.type)) {
+      control.checked = false;
+    } else if (control instanceof HTMLInputElement) {
+      control.value = "";
+    } else if (control instanceof HTMLSelectElement) {
+      control.value = "";
+    }
+  }
+  document.querySelectorAll("#top details").forEach(details => { details.open = false; });
+  render();
+}
+
 function render() {
+  if (isPreviewMode()) {
+    $("#count").textContent = "Interpreter directory is not connected.";
+    $("#results").innerHTML = '<p class="empty">Connect Supabase to display real interpreter listings. Sample profiles are not shown.</p>';
+    return;
+  }
   const list = filtered();
-  $("#count").textContent = `${list.length} interpreter${list.length === 1 ? "" : "s"}${isPreviewMode() ? " (sample preview profiles)" : ""}`;
+  $("#count").textContent = `${list.length} interpreter${list.length === 1 ? "" : "s"}`;
   if (!list.length) {
     $("#results").innerHTML = '<p class="empty">No interpreters match these filters. Try removing a filter or <button type="button" class="link" id="clear-filters">clear all filters</button>.</p>';
     return;
@@ -133,14 +144,16 @@ function render() {
         <p class="rate">${i.hourly_rate != null ? "$" + esc(i.hourly_rate) + "<small>/hr</small>" : "<small>Rate on request</small>"}</p>
       </div>
       <p class="badges">
-        ${i.demo ? '<span class="badge demo">Sample profile</span>' : ""}
         ${i.verified ? '<span class="badge ok">Verified</span>' : ""}
         <span class="badge ${i.available ? "avail" : "busy"}">${i.available ? "Available" : "Unavailable"}</span>
       </p>
       <div>${i.interpreter_languages.map(l => `<span class="tag">${esc(l.language)}</span>`).join("")}${(i.specialties || []).map(s => `<span class="tag alt">${esc(s)}</span>`).join("")}</div>
       ${i.certifications.length ? `<p class="muted">Certifications: ${i.certifications.map(x => `${esc(x.name)}${x.scope ? ` (${esc(x.scope.charAt(0).toUpperCase() + x.scope.slice(1))})` : ""}`).join(", ")}</p>` : ""}
       <div class="locked">Email and phone are private. Message through Exponent.</div>
-      ${i.demo ? '<p class="muted">Preview only. Real interpreter profiles will appear when the directory is connected.</p>' : canMessage ? `<div class="row"><button type="button" data-assignment-to="${esc(i.id)}" aria-label="Request an assignment with ${esc(i.display_name)}">Request assignment</button><button type="button" class="secondary" data-message-to="${esc(i.id)}" aria-label="Message ${esc(i.display_name)}">Message</button></div>` : ""}
+      ${canMessage ? me
+        ? `<div class="row"><button type="button" data-assignment-to="${esc(i.id)}" aria-label="Request an assignment with ${esc(i.display_name)}">Request assignment</button><button type="button" class="secondary" data-message-to="${esc(i.id)}" aria-label="Message ${esc(i.display_name)}">Message</button></div>`
+        : `<div class="row"><button type="button" data-interact-signup>Sign up to interact</button></div>`
+        : ""}
       </article>`;
   }).join("");
 }
@@ -148,7 +161,7 @@ function render() {
 async function refresh() {
   if (isPreviewMode()) {
     me = null;
-    all = PREVIEW_INTERPRETERS;
+    all = [];
     renderAuth();
     fillFacets();
     render();
@@ -440,8 +453,10 @@ function showSignup(note) {
            <label class="check"><input type="checkbox" name="certification_scopes" value="state"> State</label>
            <label class="check"><input type="checkbox" name="certification_scopes" value="local"> Local</label>
          </fieldset>
-         <label>City <input name="city" required></label>
+         <label>City <input name="city" required maxlength="100"></label>
          <label>State <input name="state"></label>
+          <label>ZIP code <input name="postal_code" inputmode="numeric" autocomplete="postal-code" pattern="[0-9]{5}(-[0-9]{4})?" required></label>
+          <p class="muted">City, state, and ZIP help clients find you. Do not enter a street address; these location details appear in search results.</p>
          <label>Phone (shown only to organizations that unlock you) <input name="phone"></label>
          <label>Rate ($/hr) <input type="number" name="rate" min="0" required></label>
          <label><input type="checkbox" name="remote" checked> Remote</label>
@@ -469,7 +484,7 @@ function showSignup(note) {
       specialties: [...new Set([...split(f.specialties), ...split(f.other_specialties)])].map(s => s.toLowerCase()),
       certs: split(f.certs),
       certification_scopes: formData.getAll("certification_scopes"),
-      city: f.city, state: f.state, phone: f.phone, hourly_rate: +f.rate, remote: !!f.remote, in_person: !!f.in_person,
+      city: f.city, state: f.state, postal_code: f.postal_code, phone: f.phone, hourly_rate: +f.rate, remote: !!f.remote, in_person: !!f.in_person,
     });
     await attempt(async () => {
       const { error } = await sb.auth.signUp({ email: f.email, password: f.password, options: { data } });
@@ -514,6 +529,11 @@ function showAccount() {
   } else {
     const i = me.interpreter;
     body += `<p>Your conversations are in Messages. Your contact details stay private.</p>
+      <label>City <input id="profile-city" value="${esc(i.city)}" maxlength="100" autocomplete="address-level2"></label>
+      <label>State <input id="profile-state" value="${esc(i.state)}" maxlength="50" autocomplete="address-level1"></label>
+      <label>ZIP code <input id="profile-postal-code" value="${esc(i.postal_code)}" maxlength="10" inputmode="numeric" autocomplete="postal-code" pattern="[0-9]{5}(-[0-9]{4})?"></label>
+      <p class="muted">City, state, and ZIP appear in search results. Keep your street address private.</p>
+      <button type="button" id="save-location">Save location</button>
       <label>Phone (private) <input id="phone" value="${esc(me.user.user_metadata?.phone)}" maxlength="40"></label>
       <label><input type="checkbox" id="avail" ${i.available ? "checked" : ""}> Available</label>
       <p class="muted">${i.verified ? "Verified." : "Not verified. Optional $10/month certification verification is planned, but not available yet."}</p>`;
@@ -525,6 +545,17 @@ function showAccount() {
     check(await sb.from("interpreter_contacts").update({ phone }).eq("interpreter_id", me.user.id));
     const { error } = await sb.auth.updateUser({ data: { phone } });
     if (error) throw error;
+  }));
+  $("#save-location")?.addEventListener("click", () => attempt(async () => {
+    const postalCode = $("#profile-postal-code").value.trim();
+    if (postalCode && !/^\d{5}(?:-\d{4})?$/.test(postalCode)) throw new Error("Enter a valid 5-digit ZIP code or ZIP+4.");
+    check(await sb.from("interpreters").update({
+      city: $("#profile-city").value.trim(),
+      state: $("#profile-state").value.trim(),
+      postal_code: postalCode || null,
+    }).eq("id", me.user.id));
+    await refresh();
+    showAccount();
   }));
   $("#avail")?.addEventListener("change", e => attempt(async () => {
     check(await sb.from("interpreters").update({ available: e.target.checked }).eq("id", me.user.id));
@@ -541,8 +572,8 @@ document.addEventListener("click", e => {
   const t = e.target.closest("button") || e.target;
   if (t.dataset.close !== undefined) dlg.close();
   if (t.id === "retry-search") refresh();
-  if (t.id === "clear-filters") { $("#filters").reset(); render(); }
-  if (t.dataset.openSignup !== undefined) showSignup();
+  if (t.id === "clear-filters") clearFilters();
+  if (t.dataset.interactSignup !== undefined) showSignup("Create an account or log in to message interpreters and request assignments.");
   if (t.dataset.ackNotice) acknowledgeNotice(t.dataset.ackNotice);
   if (t.dataset.readNotice) markNoticeRead(t.dataset.readNotice);
   if (t.dataset.assignmentTo) showAssignmentForm(t.dataset.assignmentTo);
@@ -555,20 +586,19 @@ document.addEventListener("click", e => {
       await showAssignments();
     });
   }
-  if (t.dataset.quickLanguage) {
-    $("#filters").reset();
-    $("[name=language]").value = t.dataset.quickLanguage;
-    render();
-    $("#search").scrollIntoView();
-  }
   if (t.dataset.messageTo) showMessageForm(t.dataset.messageTo);
   if (t.dataset.thread) showThread(t.dataset.thread);
   if (t.dataset.backInbox !== undefined) showInbox();
 });
 
-initAccessibility();
 let timer;
+$("#start-search").addEventListener("click", () => {
+  $("#top").classList.add("search-open");
+  $("#search").hidden = false;
+  $("#search").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("#filter-language").focus();
+});
+$("#filters").addEventListener("submit", e => { e.preventDefault(); render(); });
 $("#filters").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(render, 150); });
-$("#filters").addEventListener("reset", () => setTimeout(render));
 sb.auth.onAuthStateChange((event) => { if (event === "SIGNED_IN" || event === "SIGNED_OUT") refresh(); });
 refresh();
