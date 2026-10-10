@@ -1,2 +1,5 @@
 node_modules/
 data.db*
+.claude/settings.local.json
+supabase/.temp/
+supabase/.env*
