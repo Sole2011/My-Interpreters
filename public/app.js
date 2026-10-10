@@ -563,7 +563,9 @@ function showLogin() {
   }
   dlg.innerHTML = `<h2 id="dialog-title">Log in</h2><form id="li"><label>Email <input type="email" name="email" required></label>
     <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
+    <p><button type="button" class="link" id="forgot-password">Forgot password?</button></p>
     <div class="row"><button>Log in</button><button type="button" class="secondary" data-close>Cancel</button></div></form>`;
+  $("#forgot-password").addEventListener("click", () => showForgotPassword($("#li [name=email]").value));
   $("#li").onsubmit = async e => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
@@ -574,6 +576,49 @@ function showLogin() {
     });
   };
   dlg.showModal();
+}
+
+function showForgotPassword(email = "") {
+  dlg.innerHTML = `<h2 id="dialog-title">Reset your password</h2>
+    <p class="muted">Enter the email you signed up with. We'll send you a link to choose a new password.</p>
+    <form id="forgot"><label>Email <input type="email" name="email" required autocomplete="email" value="${esc(email)}"></label>
+    <div class="row"><button>Send reset link</button><button type="button" class="secondary" id="back-to-login">Back to log in</button></div></form>`;
+  $("#back-to-login").addEventListener("click", showLogin);
+  $("#forgot").onsubmit = async e => {
+    e.preventDefault();
+    const submit = e.submitter;
+    submit.disabled = true;
+    await attempt(async () => {
+      const { error } = await sb.auth.resetPasswordForEmail(new FormData(e.target).get("email"), {
+        redirectTo: location.origin + location.pathname,
+      });
+      if (error) throw error;
+      // Same message whether or not the email has an account, so nobody can probe who is registered.
+      dlg.innerHTML = `<h2 id="dialog-title">Check your email</h2><p>If an account exists for that address, a password reset link is on its way. It may take a few minutes; check your spam folder too.</p><div class="row"><button type="button" data-close>Close</button></div>`;
+    });
+    if (submit.isConnected) submit.disabled = false;
+  };
+  if (!dlg.open) dlg.showModal();
+}
+
+// Shown after someone opens the reset link from their email; they are signed in just enough to set a new password.
+function showNewPassword() {
+  dlg.innerHTML = `<h2 id="dialog-title">Choose a new password</h2>
+    <form id="new-password"><label>New password (8+ characters) <input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
+    <label>Confirm new password <input type="password" name="confirm" minlength="8" required autocomplete="new-password"></label>
+    <div class="row"><button>Save new password</button></div></form>`;
+  $("#new-password").onsubmit = async e => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    if (f.password !== f.confirm) return alert("The two passwords don't match.");
+    await attempt(async () => {
+      const { error } = await sb.auth.updateUser({ password: f.password });
+      if (error) throw error;
+      dlg.innerHTML = `<h2 id="dialog-title">Password updated</h2><p>Your new password is saved and you're logged in.</p><div class="row"><button type="button" data-close>Close</button></div>`;
+      await refresh();
+    });
+  };
+  if (!dlg.open) dlg.showModal();
 }
 
 function showAccount() {
@@ -719,5 +764,8 @@ $("#start-search").addEventListener("click", () => {
 });
 $("#filters").addEventListener("submit", e => { e.preventDefault(); render(); });
 $("#filters").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(render, 150); });
-sb.auth.onAuthStateChange((event) => { if (event === "SIGNED_IN" || event === "SIGNED_OUT") refresh(); });
+sb.auth.onAuthStateChange((event) => {
+  if (event === "PASSWORD_RECOVERY") showNewPassword();
+  if (event === "SIGNED_IN" || event === "SIGNED_OUT") refresh();
+});
 refresh().then(handleStripeReturn);
