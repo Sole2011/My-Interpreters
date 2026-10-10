@@ -25,8 +25,13 @@ Deno.serve(async (req) => {
   const user = auth?.user;
   if (!user) return reply({ error: "Please log in" }, 401);
 
-  const { data: profile } = await admin.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (profile?.role !== "interpreter") return reply({ error: "Only interpreters can set up payouts" }, 403);
+  const { data: profile, error: profileError } = await admin.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  if (profileError) {
+    console.error("connect-onboarding: profile lookup failed", profileError);
+    return reply({ error: `Could not load your account (${profileError.message})` }, 500);
+  }
+  if (!profile) return reply({ error: "Your account profile is missing. Please contact support." }, 404);
+  if (profile.role !== "interpreter") return reply({ error: "Only interpreters can set up payouts" }, 403);
 
   const body = await req.json().catch(() => ({}));
   const action = body?.action === "status" ? "status" : "start";
