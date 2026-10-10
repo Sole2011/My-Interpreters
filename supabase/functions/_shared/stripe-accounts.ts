@@ -39,7 +39,8 @@ export async function createOnboardingLink(accountId: string, returnUrl: string,
     account: accountId,
     use_case: {
       type: "account_onboarding",
-      account_onboarding: { configurations: ["recipient"], return_url: returnUrl, refresh_url: refreshUrl },
+      // Stripe works out which configurations to onboard (here: recipient) from the account itself.
+      account_onboarding: { return_url: returnUrl, refresh_url: refreshUrl },
     },
   });
   return link.url as string;
