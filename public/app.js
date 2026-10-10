@@ -6,6 +6,17 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const split = s => (s || "").split(",").map(x => x.trim()).filter(Boolean);
 const attempt = async fn => { try { return await fn(); } catch (e) { alert(e.message || "Something went wrong"); } };
 const check = ({ data, error }) => { if (error) throw error; return data; };
+const money = cents => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format((cents || 0) / 100);
+// Calls a Supabase Edge Function and surfaces the server's own error message.
+async function callFunction(name, body) {
+  const { data, error } = await sb.functions.invoke(name, { body });
+  if (error) {
+    let message = error.message;
+    try { message = (await error.context.json()).error || message; } catch {}
+    throw new Error(message);
+  }
+  return data;
+}
 const POLICY_VERSIONS = { terms: "1.0", privacy: "1.0", rules: "1.0" };
 
 let me = null; // { user, profile, interpreter?, usage? }
@@ -18,6 +29,7 @@ async function loadMe() {
   me = { user: session.user, profile };
   if (profile?.role === "interpreter") {
     me.interpreter = check(await sb.from("interpreters").select("*").eq("id", session.user.id).maybeSingle());
+    me.payout = check(await sb.from("interpreter_payout_accounts").select("payouts_enabled").eq("interpreter_id", session.user.id).maybeSingle());
   }
 }
 
@@ -240,25 +252,49 @@ async function showAssignments() {
   if (!me) return showLogin();
   await attempt(async () => {
     const rows = check(await sb.from("assignments")
-      .select("id, customer_id, requested_interpreter_id, current_interpreter_id, language, specialty, city, state, service_mode, scheduled_for, status, current_response_deadline, accepted_at, address, room_number, parking_instructions, transit_stop")
+      .select("id, customer_id, requested_interpreter_id, current_interpreter_id, language, specialty, city, state, service_mode, scheduled_for, status, current_response_deadline, accepted_at, address, room_number, parking_instructions, transit_stop, duration_hours, payment_status, authorized_amount_cents, captured_amount_cents, platform_fee_cents")
       .order("created_at", { ascending: false }));
     const isInterpreter = me.profile.role === "interpreter";
     const list = rows.length
       ? `<ul class="assignment-list">${rows.map(a => {
           const selected = all.find(i => i.id === a.current_interpreter_id)?.display_name || "Finding a match";
-          const status = a.status === "offered"
-            ? `Awaiting ${isInterpreter ? "your response" : esc(selected)} until ${esc(new Date(a.current_response_deadline).toLocaleString())}`
-            : a.status.charAt(0).toUpperCase() + a.status.slice(1);
+          const status = a.status === "awaiting_payment"
+            ? "Waiting for your payment. Nothing has been sent to the interpreter yet."
+            : a.status === "offered"
+              ? `Awaiting ${isInterpreter ? "your response" : esc(selected)} until ${esc(new Date(a.current_response_deadline).toLocaleString())}`
+              : a.status.charAt(0).toUpperCase() + a.status.slice(1).replace("_", " ");
+          const hours = a.duration_hours ? `${Number(a.duration_hours)} h` : "";
+          let money_line = "";
+          if (isInterpreter) {
+            if (a.status === "accepted" && a.captured_amount_cents != null) {
+              money_line = `You receive ${money(a.captured_amount_cents - (a.platform_fee_cents || 0))} after Exponent's ${money(a.platform_fee_cents)} fee.`;
+            } else if (a.status === "offered" && a.duration_hours && me.interpreter?.hourly_rate != null) {
+              money_line = `Booking total at your rate: ${money(Math.round(Number(me.interpreter.hourly_rate) * Number(a.duration_hours) * 100))}. Payment is secured by the customer's card hold.`;
+            }
+          } else if (a.payment_status === "captured") {
+            money_line = `Charged ${money(a.captured_amount_cents)}.`;
+          } else if (a.payment_status === "authorized" && a.status === "unfilled") {
+            money_line = `No interpreter accepted, so you won't be charged. Cancel the request to release the ${money(a.authorized_amount_cents)} hold now; otherwise your bank releases it within 7 days.`;
+          } else if (a.payment_status === "authorized") {
+            money_line = `${money(a.authorized_amount_cents)} is held on your card, and you are only charged if an interpreter accepts.`;
+          } else if (a.payment_status === "released") {
+            money_line = "Card hold released. You were not charged.";
+          } else if (a.status === "awaiting_payment") {
+            money_line = `${money(a.authorized_amount_cents)} will be held on your card, and charged only if an interpreter accepts.`;
+          }
           const locationDetails = [
             a.address && `Address: ${a.address}`,
             a.room_number && `Room: ${a.room_number}`,
             a.parking_instructions && `Parking: ${a.parking_instructions}`,
             a.transit_stop && `Nearby transit: ${a.transit_stop}`,
           ].filter(Boolean);
+          const canCancel = !isInterpreter && ["awaiting_payment", "offered", "unfilled"].includes(a.status) && a.payment_status !== "capturing";
           const actions = isInterpreter && a.status === "offered" && a.current_interpreter_id === me.user.id
             ? `<div class="row"><button type="button" data-assignment-response="${esc(a.id)}" data-accept="true">Accept</button><button type="button" class="secondary" data-assignment-response="${esc(a.id)}" data-accept="false">Decline</button></div>`
-            : "";
-          return `<li class="assignment-item"><div><h3>${esc(a.language)} · ${esc(a.specialty)}</h3><p>${esc([a.city, a.state].filter(Boolean).join(", ")) || "Remote"} · ${esc(a.service_mode)} · ${esc(new Date(a.scheduled_for).toLocaleString())}</p>${locationDetails.map(detail => `<p>${esc(detail)}</p>`).join("")}<p class="muted">${status}</p></div>${actions}</li>`;
+            : !isInterpreter && (a.status === "awaiting_payment" || canCancel)
+              ? `<div class="row">${a.status === "awaiting_payment" ? `<button type="button" data-pay-booking="${esc(a.id)}">Complete payment</button>` : ""}${canCancel ? `<button type="button" class="secondary" data-cancel-booking="${esc(a.id)}">Cancel request</button>` : ""}</div>`
+              : "";
+          return `<li class="assignment-item"><div><h3>${esc(a.language)} · ${esc(a.specialty)}</h3><p>${esc([a.city, a.state].filter(Boolean).join(", ")) || "Remote"} · ${esc(a.service_mode)} · ${esc(new Date(a.scheduled_for).toLocaleString())}${hours ? ` · ${esc(hours)}` : ""}</p>${locationDetails.map(detail => `<p>${esc(detail)}</p>`).join("")}<p class="muted">${status}</p>${money_line ? `<p class="muted">${esc(money_line)}</p>` : ""}</div>${actions}</li>`;
         }).join("")}</ul>`
       : '<p class="empty">No assignments yet. Request one from an interpreter profile.</p>';
     dlg.innerHTML = `<h2 id="dialog-title">Assignments</h2>${list}<div class="row"><button type="button" class="secondary" data-close>Close</button></div>`;
@@ -275,6 +311,7 @@ function showAssignmentForm(interpreterId) {
   const specialties = ["conference", "education", "legal", "medical", "other"];
   dlg.innerHTML = `<h2 id="dialog-title">Request ${esc(interpreter.display_name)}</h2>
     <p class="muted">In-person offers have up to 24 hours to accept. Virtual offers expire after 24 hours or four hours before the assignment, whichever comes first. If the interpreter doesn't accept, Exponent offers it to the next matching available interpreter.</p>
+    <p class="muted">You'll pay on Stripe's secure payment page. Your card is only held. You're charged when an interpreter accepts, and the hold is released if nobody does.</p>
     <form id="assignment-form">
       <label>Language <select name="language" required>${languages.map(language => `<option value="${esc(language)}" ${interpreter.interpreter_languages.some(l => l.language === language) ? "selected" : ""}>${esc(language)}</option>`).join("")}</select></label>
       <label>Specialty <select name="specialty" required>${specialties.map(specialty => `<option value="${specialty}" ${(interpreter.specialties || []).includes(specialty) ? "selected" : ""}>${specialty[0].toUpperCase() + specialty.slice(1)}</option>`).join("")}</select></label>
@@ -289,8 +326,10 @@ function showAssignmentForm(interpreterId) {
         <label>Nearby public transit stop <input name="transit_stop" maxlength="150" placeholder="Station, stop or route"></label>
       </fieldset>
       <label>Date and time <input type="datetime-local" name="scheduled_for" required></label>
-      <label>Maximum hourly rate ($, optional) <input name="max_hourly_rate" type="number" min="0" inputmode="decimal"></label>
-      <div class="row"><button type="submit">Send assignment request</button><button type="button" class="secondary" data-close>Cancel</button></div>
+      <label>Duration (hours) <input name="duration_hours" type="number" min="0.5" max="12" step="0.5" value="1" required></label>
+      <label>Maximum hourly rate ($${interpreter.hourly_rate != null ? ", optional" : ", required"}) <input name="max_hourly_rate" type="number" min="1" inputmode="decimal" ${interpreter.hourly_rate != null ? "" : "required"}></label>
+      <p class="muted" id="hold-estimate" role="status"></p>
+      <div class="row"><button type="submit">Continue to secure payment</button><button type="button" class="secondary" data-close>Cancel</button></div>
     </form>`;
   const modeSelect = $("[name=service_mode]");
   const cityInput = $("[name=city]");
@@ -310,6 +349,16 @@ function showAssignmentForm(interpreterId) {
     scheduleInput.min = minTime.toISOString().slice(0, 16);
   };
   modeSelect.addEventListener("change", updateModeRequirements);
+  // The hold covers the highest rate any matched interpreter could charge for these hours.
+  const updateHoldEstimate = () => {
+    const hours = Number($("[name=duration_hours]").value);
+    const rate = Number($("[name=max_hourly_rate]").value) || Number(interpreter.hourly_rate);
+    $("#hold-estimate").textContent = hours >= 0.5 && rate > 0
+      ? `Card hold: up to ${money(Math.ceil(rate * hours * 100))} (${hours} h at up to $${rate}/h). You're only charged the accepting interpreter's actual rate.`
+      : "";
+  };
+  $("#assignment-form").addEventListener("input", updateHoldEstimate);
+  updateHoldEstimate();
   toggleLocation.addEventListener("click", () => {
     locationFields.hidden = !locationFields.hidden;
     toggleLocation.setAttribute("aria-expanded", String(!locationFields.hidden));
@@ -319,21 +368,30 @@ function showAssignmentForm(interpreterId) {
     event.preventDefault();
     const fields = Object.fromEntries(new FormData(event.currentTarget));
     await attempt(async () => {
-      check(await sb.rpc("request_interpreter_assignment", {
-        p_interpreter_id: interpreterId,
-        p_language: fields.language,
-        p_specialty: fields.specialty,
-        p_city: fields.city,
-        p_state: fields.state,
-        p_service_mode: fields.service_mode,
-        p_scheduled_for: new Date(fields.scheduled_for).toISOString(),
-        p_max_hourly_rate: fields.max_hourly_rate ? Number(fields.max_hourly_rate) : null,
-        p_address: fields.service_mode === "in-person" ? fields.address : null,
-        p_room_number: fields.service_mode === "in-person" ? fields.room_number : null,
-        p_parking_instructions: fields.service_mode === "in-person" ? fields.parking_instructions : null,
-        p_transit_stop: fields.service_mode === "in-person" ? fields.transit_stop : null,
-      }));
-      await showAssignments();
+      const submit = event.submitter;
+      if (submit) submit.disabled = true;
+      try {
+        const assignmentId = check(await sb.rpc("request_interpreter_assignment", {
+          p_interpreter_id: interpreterId,
+          p_language: fields.language,
+          p_specialty: fields.specialty,
+          p_city: fields.city,
+          p_state: fields.state,
+          p_service_mode: fields.service_mode,
+          p_scheduled_for: new Date(fields.scheduled_for).toISOString(),
+          p_max_hourly_rate: fields.max_hourly_rate ? Number(fields.max_hourly_rate) : null,
+          p_address: fields.service_mode === "in-person" ? fields.address : null,
+          p_room_number: fields.service_mode === "in-person" ? fields.room_number : null,
+          p_parking_instructions: fields.service_mode === "in-person" ? fields.parking_instructions : null,
+          p_transit_stop: fields.service_mode === "in-person" ? fields.transit_stop : null,
+          p_duration_hours: Number(fields.duration_hours),
+        }));
+        const { url } = await callFunction("create-booking-checkout", { assignment_id: assignmentId });
+        window.location.href = url;
+      } catch (error) {
+        if (submit) submit.disabled = false;
+        throw error;
+      }
     });
   };
   if (!dlg.open) dlg.showModal();
@@ -536,6 +594,10 @@ function showAccount() {
       <button type="button" id="save-location">Save location</button>
       <label>Phone (private) <input id="phone" value="${esc(me.user.user_metadata?.phone)}" maxlength="40"></label>
       <label><input type="checkbox" id="avail" ${i.available ? "checked" : ""}> Available</label>
+      <h3>Payouts</h3>
+      ${me.payout?.payouts_enabled
+        ? '<p class="muted">Payouts are set up. You can accept paid bookings.</p>'
+        : '<p class="muted">Set up payouts to receive payment and be bookable. Stripe, our payment partner, securely collects your ID and bank details; Exponent never sees or stores them.</p><button type="button" id="setup-payouts">Set up payouts</button>'}
       <p class="muted">${i.verified ? "Verified." : "Not verified. Optional $10/month certification verification is planned, but not available yet."}</p>`;
   }
   body += `<label class="check consent-check"><input type="checkbox" id="feature-updates" ${p.feature_updates_opt_in ? "checked" : ""}> Notify me in-app about new Exponent features.</label>`;
@@ -557,6 +619,11 @@ function showAccount() {
     await refresh();
     showAccount();
   }));
+  $("#setup-payouts")?.addEventListener("click", e => attempt(async () => {
+    e.target.disabled = true;
+    const { url } = await callFunction("connect-onboarding", { action: "start" });
+    window.location.href = url;
+  }).finally(() => { e.target.disabled = false; }));
   $("#avail")?.addEventListener("change", e => attempt(async () => {
     check(await sb.from("interpreters").update({ available: e.target.checked }).eq("id", me.user.id));
     await refresh();
@@ -579,10 +646,39 @@ document.addEventListener("click", e => {
   if (t.dataset.assignmentTo) showAssignmentForm(t.dataset.assignmentTo);
   if (t.dataset.assignmentResponse) {
     attempt(async () => {
-      check(await sb.rpc("respond_to_assignment", {
-        p_assignment_id: t.dataset.assignmentResponse,
-        p_accept: t.dataset.accept === "true",
-      }));
+      if (t.dataset.accept === "true") {
+        t.disabled = true;
+        try {
+          await callFunction("accept-assignment", { assignment_id: t.dataset.assignmentResponse });
+        } catch (error) {
+          t.disabled = false;
+          throw error;
+        }
+      } else {
+        check(await sb.rpc("respond_to_assignment", {
+          p_assignment_id: t.dataset.assignmentResponse,
+          p_accept: false,
+        }));
+      }
+      await showAssignments();
+    });
+  }
+  if (t.dataset.payBooking) {
+    attempt(async () => {
+      t.disabled = true;
+      try {
+        const { url } = await callFunction("create-booking-checkout", { assignment_id: t.dataset.payBooking });
+        window.location.href = url;
+      } catch (error) {
+        t.disabled = false;
+        throw error;
+      }
+    });
+  }
+  if (t.dataset.cancelBooking && confirm("Cancel this request? Any card hold will be released and you won't be charged.")) {
+    attempt(async () => {
+      t.disabled = true;
+      await callFunction("cancel-booking", { assignment_id: t.dataset.cancelBooking });
       await showAssignments();
     });
   }
@@ -590,6 +686,29 @@ document.addEventListener("click", e => {
   if (t.dataset.thread) showThread(t.dataset.thread);
   if (t.dataset.backInbox !== undefined) showInbox();
 });
+
+// After Stripe sends people back (?payment=… or ?payouts=…), refresh state and show what happened.
+async function handleStripeReturn() {
+  const params = new URLSearchParams(location.search);
+  const payment = params.get("payment");
+  const payouts = params.get("payouts");
+  if (!payment && !payouts) return;
+  history.replaceState(null, "", location.pathname + location.hash);
+  if (!me || isPreviewMode()) return;
+  await attempt(async () => {
+    if (payouts) {
+      await callFunction("connect-onboarding", { action: "status" });
+      await refresh();
+      showAccount();
+    } else if (payment === "success") {
+      dlg.innerHTML = `<h2 id="dialog-title">Payment authorized</h2><p>Your card is held, not charged. Your request is going to the interpreter now. You're charged only if they accept.</p><div class="row"><button type="button" id="view-assignments">View my requests</button><button type="button" class="secondary" data-close>Close</button></div>`;
+      $("#view-assignments").addEventListener("click", showAssignments);
+      dlg.showModal();
+    } else {
+      await showAssignments();
+    }
+  });
+}
 
 let timer;
 $("#start-search").addEventListener("click", () => {
@@ -601,4 +720,4 @@ $("#start-search").addEventListener("click", () => {
 $("#filters").addEventListener("submit", e => { e.preventDefault(); render(); });
 $("#filters").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(render, 150); });
 sb.auth.onAuthStateChange((event) => { if (event === "SIGNED_IN" || event === "SIGNED_OUT") refresh(); });
-refresh();
+refresh().then(handleStripeReturn);
