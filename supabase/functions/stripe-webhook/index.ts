@@ -2,6 +2,7 @@
 // Deploy with --no-verify-jwt; authenticity comes from the signature.
 import Stripe from "npm:stripe@17";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { recipientReady } from "../_shared/stripe-accounts.ts";
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { httpClient: Stripe.createFetchHttpClient() });
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -76,12 +77,18 @@ Deno.serve(async (req) => {
     }
   } else if (event.type === "account.updated") {
     // An interpreter's payout account finished (or lost) verification: keep bookability in sync.
-    const account = event.data.object as Stripe.Account;
-    const enabled = Boolean(account.details_submitted && account.payouts_enabled && account.capabilities?.transfers === "active");
-    const { error } = await admin.from("interpreter_payout_accounts")
-      .update({ payouts_enabled: enabled, updated_at: new Date().toISOString() })
-      .eq("stripe_account_id", account.id);
-    if (error) return new Response("DB error", { status: 500 });
+    // Payout accounts are Accounts v2, so the readiness check reads the v2 recipient configuration.
+    const accountId = (event.data.object as Stripe.Account).id;
+    const { data: known } = await admin.from("interpreter_payout_accounts")
+      .select("interpreter_id").eq("stripe_account_id", accountId).maybeSingle();
+    if (known) {
+      const enabled = await recipientReady(accountId).catch(() => null);
+      if (enabled === null) return new Response("Stripe error", { status: 500 });
+      const { error } = await admin.from("interpreter_payout_accounts")
+        .update({ payouts_enabled: enabled, updated_at: new Date().toISOString() })
+        .eq("stripe_account_id", accountId);
+      if (error) return new Response("DB error", { status: 500 });
+    }
   } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
     const sub = event.data.object as Stripe.Subscription;
     // past_due stays on Pro while Stripe retries the payment.
