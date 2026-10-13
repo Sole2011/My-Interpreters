@@ -34,14 +34,15 @@ export async function createRecipientAccount(interpreterId: string, email: strin
   return account.id as string;
 }
 
-export async function createOnboardingLink(accountId: string, returnUrl: string, refreshUrl: string) {
+// "account_onboarding" collects everything needed to get paid; "account_update" lets an onboarded
+// interpreter change details such as the bank account their payouts go to.
+// Stripe works out which configurations to collect for (here: recipient) from the account itself.
+export async function createAccountLink(
+  accountId: string, type: "account_onboarding" | "account_update", returnUrl: string, refreshUrl: string,
+) {
   const link = await stripeV2("POST", "/v2/core/account_links", {
     account: accountId,
-    use_case: {
-      type: "account_onboarding",
-      // Stripe works out which configurations to onboard (here: recipient) from the account itself.
-      account_onboarding: { return_url: returnUrl, refresh_url: refreshUrl },
-    },
+    use_case: { type, [type]: { return_url: returnUrl, refresh_url: refreshUrl } },
   });
   return link.url as string;
 }

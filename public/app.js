@@ -641,7 +641,7 @@ function showAccount() {
       <label><input type="checkbox" id="avail" ${i.available ? "checked" : ""}> Available</label>
       <h3>Payouts</h3>
       ${me.payout?.payouts_enabled
-        ? '<p class="muted">Payouts are set up. You can accept paid bookings.</p>'
+        ? '<p class="muted">Payouts are set up. You can accept paid bookings. To change the bank account your payouts go to, or other payout details, use Stripe\'s secure page.</p><button type="button" class="secondary" id="update-payouts">Edit payout details</button>'
         : '<p class="muted">Set up payouts to receive payment and be bookable. Stripe, our payment partner, securely collects your ID and bank details; Exponent never sees or stores them.</p><button type="button" id="setup-payouts">Set up payouts</button>'}
       <p class="muted">${i.verified ? "Verified." : "Not verified. Optional $10/month certification verification is planned, but not available yet."}</p>`;
   }
@@ -664,6 +664,11 @@ function showAccount() {
     await refresh();
     showAccount();
   }));
+  $("#update-payouts")?.addEventListener("click", e => attempt(async () => {
+    e.target.disabled = true;
+    const { url } = await callFunction("connect-onboarding", { action: "update" });
+    window.location.href = url;
+  }).finally(() => { e.target.disabled = false; }));
   $("#setup-payouts")?.addEventListener("click", e => attempt(async () => {
     e.target.disabled = true;
     const { url } = await callFunction("connect-onboarding", { action: "start" });

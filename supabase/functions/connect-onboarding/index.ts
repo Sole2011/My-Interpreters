@@ -1,9 +1,10 @@
 // Interpreter payout onboarding (Stripe Connect, Accounts v2 recipient with Express dashboard).
 // POST { action: "start" }  -> { url }   Stripe-hosted form where the interpreter adds ID and bank details.
+// POST { action: "update" } -> { url }   Stripe-hosted form to change payout details (e.g. bank account).
 // POST { action: "status" } -> { payouts_enabled }   refreshes status after they return.
 // Secrets needed: STRIPE_SECRET_KEY, SITE_URL (optional), PAYOUT_COUNTRY (optional, default US).
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { createOnboardingLink, createRecipientAccount, recipientReady } from "../_shared/stripe-accounts.ts";
+import { createAccountLink, createRecipientAccount, recipientReady } from "../_shared/stripe-accounts.ts";
 
 const SITE_URL = Deno.env.get("SITE_URL") ?? "https://sole2011.github.io/My-Interpreters/";
 const cors = {
@@ -33,7 +34,7 @@ Deno.serve(async (req) => {
   if (profile.role !== "interpreter") return reply({ error: "Only interpreters can set up payouts" }, 403);
 
   const body = await req.json().catch(() => ({}));
-  const action = body?.action === "status" ? "status" : "start";
+  const action = ["status", "update"].includes(body?.action) ? body.action : "start";
 
   try {
     const { data: existing } = await admin.from("interpreter_payout_accounts")
@@ -48,6 +49,12 @@ Deno.serve(async (req) => {
       return reply({ payouts_enabled: enabled });
     }
 
+    if (action === "update") {
+      if (!existing) return reply({ error: "Set up payouts first" }, 409);
+      const url = await createAccountLink(existing.stripe_account_id, "account_update", `${SITE_URL}?payouts=return`, `${SITE_URL}?payouts=refresh`);
+      return reply({ url });
+    }
+
     let accountId = existing?.stripe_account_id;
     if (!accountId) {
       accountId = await createRecipientAccount(user.id, user.email ?? undefined, Deno.env.get("PAYOUT_COUNTRY") ?? "US");
@@ -56,7 +63,7 @@ Deno.serve(async (req) => {
       if (error) throw error;
     }
 
-    const url = await createOnboardingLink(accountId, `${SITE_URL}?payouts=return`, `${SITE_URL}?payouts=refresh`);
+    const url = await createAccountLink(accountId, "account_onboarding", `${SITE_URL}?payouts=return`, `${SITE_URL}?payouts=refresh`);
     return reply({ url });
   } catch (error) {
     console.error("connect-onboarding failed", error);
