@@ -51,7 +51,11 @@ Deno.serve(async (req) => {
 
     if (action === "update") {
       if (!existing) return reply({ error: "Set up payouts first" }, 409);
-      const url = await createAccountLink(existing.stripe_account_id, "account_update", `${SITE_URL}?payouts=return`, `${SITE_URL}?payouts=refresh`);
+      // Stripe only offers the update form once onboarding is fully complete; until then the
+      // onboarding form is where details (including the bank account) can be reviewed and changed.
+      const args = [`${SITE_URL}?payouts=return`, `${SITE_URL}?payouts=refresh`] as const;
+      const url = await createAccountLink(existing.stripe_account_id, "account_update", ...args)
+        .catch(() => createAccountLink(existing.stripe_account_id, "account_onboarding", ...args));
       return reply({ url });
     }
 
