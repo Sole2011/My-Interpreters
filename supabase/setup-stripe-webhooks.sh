@@ -43,5 +43,5 @@ create() { # $1 = secret name, $2 = "true" for connected-account events, rest = 
 
 create STRIPE_WEBHOOK_SECRET false checkout.session.completed checkout.session.expired \
   customer.subscription.updated customer.subscription.deleted
-create STRIPE_CONNECT_WEBHOOK_SECRET true account.updated
-echo "Done."
+echo "Payout accounts use Accounts v2, which reports through thin events instead."
+echo "Now run: bash supabase/setup-stripe-account-events.sh"

@@ -6,8 +6,13 @@ import { recipientReady } from "../_shared/stripe-accounts.ts";
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { httpClient: Stripe.createFetchHttpClient() });
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-// Connected-account events (interpreter payout status) arrive on a separate Stripe endpoint with its own secret.
-const SECRETS = [Deno.env.get("STRIPE_WEBHOOK_SECRET"), Deno.env.get("STRIPE_CONNECT_WEBHOOK_SECRET")]
+// Payout-account events arrive on separate Stripe destinations with their own secrets: the Accounts v2
+// thin-event destination (STRIPE_ACCOUNT_EVENTS_SECRET) and the older v1 connect endpoint.
+const SECRETS = [
+  Deno.env.get("STRIPE_WEBHOOK_SECRET"),
+  Deno.env.get("STRIPE_ACCOUNT_EVENTS_SECRET"),
+  Deno.env.get("STRIPE_CONNECT_WEBHOOK_SECRET"),
+]
   .filter((secret): secret is string => Boolean(secret));
 
 // The customer's card hold succeeded: offer the booking to the interpreter.
@@ -40,6 +45,21 @@ async function confirmBookingHold(session: Stripe.Checkout.Session): Promise<str
     await admin.rpc("mark_payment_released", { p_assignment_id: assignmentId });
   }
   return null;
+}
+
+// An interpreter's payout account finished (or lost) verification: keep bookability in sync.
+// Payout accounts are Accounts v2, so readiness reads the v2 recipient configuration.
+// Returns an error message to make Stripe retry, or null when handled.
+async function syncPayoutAccount(accountId: string): Promise<string | null> {
+  const { data: known } = await admin.from("interpreter_payout_accounts")
+    .select("interpreter_id").eq("stripe_account_id", accountId).maybeSingle();
+  if (!known) return null;
+  const enabled = await recipientReady(accountId).catch(() => null);
+  if (enabled === null) return "Stripe error";
+  const { error } = await admin.from("interpreter_payout_accounts")
+    .update({ payouts_enabled: enabled, updated_at: new Date().toISOString() })
+    .eq("stripe_account_id", accountId);
+  return error ? "DB error" : null;
 }
 
 Deno.serve(async (req) => {
@@ -76,18 +96,15 @@ Deno.serve(async (req) => {
         .eq("id", s.metadata.assignment_id).eq("status", "awaiting_payment");
     }
   } else if (event.type === "account.updated") {
-    // An interpreter's payout account finished (or lost) verification: keep bookability in sync.
-    // Payout accounts are Accounts v2, so the readiness check reads the v2 recipient configuration.
-    const accountId = (event.data.object as Stripe.Account).id;
-    const { data: known } = await admin.from("interpreter_payout_accounts")
-      .select("interpreter_id").eq("stripe_account_id", accountId).maybeSingle();
-    if (known) {
-      const enabled = await recipientReady(accountId).catch(() => null);
-      if (enabled === null) return new Response("Stripe error", { status: 500 });
-      const { error } = await admin.from("interpreter_payout_accounts")
-        .update({ payouts_enabled: enabled, updated_at: new Date().toISOString() })
-        .eq("stripe_account_id", accountId);
-      if (error) return new Response("DB error", { status: 500 });
+    // Legacy v1 event; payout accounts are v2 now, but keep any stragglers in sync.
+    const failed = await syncPayoutAccount((event.data.object as Stripe.Account).id);
+    if (failed) return new Response(failed, { status: 500 });
+  } else if ((event.type as string).startsWith("v2.core.account")) {
+    // Accounts v2 thin event: the payload only names the account, so syncPayoutAccount re-reads it from Stripe.
+    const accountId = (event as unknown as { related_object?: { id?: string } }).related_object?.id;
+    if (accountId) {
+      const failed = await syncPayoutAccount(accountId);
+      if (failed) return new Response(failed, { status: 500 });
     }
   } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
     const sub = event.data.object as Stripe.Subscription;
